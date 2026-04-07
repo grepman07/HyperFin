@@ -15,6 +15,7 @@ struct ChatMessageUI: Identifiable {
     }
 }
 
+@MainActor
 @Observable
 final class ChatViewModel {
     var messages: [ChatMessageUI] = [

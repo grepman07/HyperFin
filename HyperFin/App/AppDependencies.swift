@@ -59,8 +59,9 @@ final class AppDependencies {
         self.keychain = KeychainManager()
 
         // Seed system categories on first launch
-        Task {
-            try? await categoryRepo.seedSystemCategories()
+        let repo = categoryRepo
+        Task { @MainActor in
+            try? await repo.seedSystemCategories()
         }
     }
 }
