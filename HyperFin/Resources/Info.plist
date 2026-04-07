@@ -27,6 +27,10 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.hyperfin.app.refresh</string>
+	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>HyperFin uses Face ID to securely unlock your financial data.</string>
 	<key>UILaunchScreen</key>

@@ -1,10 +1,28 @@
 import SwiftUI
+import HFSecurity
+import HFShared
 
 struct LockScreenView: View {
+    @Environment(AppDependencies.self) private var dependencies
     @Binding var isAuthenticated: Bool
+    @State private var showAuth = false
     @State private var showError = false
+    @State private var hasCheckedTokens = false
 
     var body: some View {
+        Group {
+            if showAuth {
+                AuthView(isAuthenticated: $isAuthenticated)
+            } else {
+                biometricScreen
+            }
+        }
+        .onAppear {
+            checkExistingSession()
+        }
+    }
+
+    private var biometricScreen: some View {
         VStack(spacing: 32) {
             Spacer()
 
@@ -43,17 +61,35 @@ struct LockScreenView: View {
 
             Spacer().frame(height: 40)
         }
-        .onAppear {
+    }
+
+    private func checkExistingSession() {
+        guard !hasCheckedTokens else { return }
+        hasCheckedTokens = true
+
+        // Check if we have saved tokens
+        if let token = try? dependencies.keychain.loadString(key: "accessToken"), !token.isEmpty {
+            // Have tokens — show biometric unlock
             authenticate()
+        } else {
+            // No tokens — show login/register
+            showAuth = true
         }
     }
 
     private func authenticate() {
-        // In production: use BiometricAuthManager
-        // For development, auto-authenticate:
         Task {
-            try? await Task.sleep(for: .milliseconds(300))
-            isAuthenticated = true
+            do {
+                let success = try await dependencies.biometricAuth.authenticate()
+                if success {
+                    isAuthenticated = true
+                }
+            } catch BiometricError.notAvailable {
+                // No biometrics — auto-authenticate in development
+                isAuthenticated = true
+            } catch {
+                showError = true
+            }
         }
     }
 }

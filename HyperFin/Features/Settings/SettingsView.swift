@@ -1,18 +1,24 @@
 import SwiftUI
+import SwiftData
+import HFData
+import HFDomain
+import HFShared
 
 struct SettingsView: View {
+    @Query(sort: \SDTransaction.date, order: .reverse) private var transactions: [SDTransaction]
+    @Query(sort: \SDCategory.name) private var categories: [SDCategory]
+    @Query(sort: \SDAccount.institutionName) private var accounts: [SDAccount]
+
+    @State private var showExportShare = false
+    @State private var exportURL: URL?
+    @State private var isExporting = false
+
     var body: some View {
         NavigationStack {
             List {
                 Section("Account") {
                     NavigationLink {
-                        Text("Profile")
-                    } label: {
-                        Label("Profile", systemImage: "person.fill")
-                    }
-
-                    NavigationLink {
-                        Text("Notifications")
+                        AlertsView()
                     } label: {
                         Label("Notifications", systemImage: "bell.fill")
                     }
@@ -24,33 +30,47 @@ struct SettingsView: View {
                     } label: {
                         Label("Face ID & Passcode", systemImage: "faceid")
                     }
-
-                    NavigationLink {
-                        Text("Two-Factor Auth")
-                    } label: {
-                        Label("Two-Factor Authentication", systemImage: "lock.shield.fill")
-                    }
                 }
 
                 Section("Data") {
                     Button {
-                        // Export CSV
+                        exportCSV()
                     } label: {
-                        Label("Export Data (CSV)", systemImage: "square.and.arrow.up")
+                        HStack {
+                            Label("Export Data (CSV)", systemImage: "square.and.arrow.up")
+                            Spacer()
+                            if isExporting {
+                                ProgressView()
+                            } else {
+                                Text("\(transactions.count) transactions")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
+                    .disabled(transactions.isEmpty || isExporting)
 
                     NavigationLink {
-                        Text("Manage Categories")
+                        TransactionsView()
                     } label: {
-                        Label("Categories", systemImage: "tag.fill")
+                        Label("All Transactions", systemImage: "list.bullet")
                     }
                 }
 
                 Section("AI") {
-                    NavigationLink {
-                        Text("AI Model Info")
-                    } label: {
+                    HStack {
                         Label("On-Device AI", systemImage: "brain")
+                        Spacer()
+                        Text("Gemma 4 E4B")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    HStack {
+                        Label("Model Status", systemImage: "cpu")
+                        Spacer()
+                        Text("Ready for integration")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                 }
 
@@ -79,6 +99,57 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .sheet(isPresented: $showExportShare) {
+                if let url = exportURL {
+                    ShareSheet(items: [url])
+                }
+            }
         }
     }
+
+    private func exportCSV() {
+        isExporting = true
+
+        let categoryMap = Dictionary(uniqueKeysWithValues: categories.map { ($0.id, $0.name) })
+        let accountMap = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0.accountName) })
+
+        var csv = "Date,Amount,Category,Merchant,Description,Account\n"
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        for txn in transactions {
+            let date = formatter.string(from: txn.date)
+            let amount = "\(txn.amount)"
+            let category = txn.categoryId.flatMap { categoryMap[$0] } ?? ""
+            let merchant = (txn.merchantName ?? "").replacingOccurrences(of: ",", with: " ")
+            let description = txn.originalDescription.replacingOccurrences(of: ",", with: " ")
+            let account = accountMap[txn.accountId] ?? ""
+            csv += "\(date),\(amount),\(category),\(merchant),\(description),\(account)\n"
+        }
+
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("HyperFin_Export_\(formatter.string(from: Date())).csv")
+
+        do {
+            try csv.write(to: fileURL, atomically: true, encoding: .utf8)
+            exportURL = fileURL
+            showExportShare = true
+            HFLogger.general.info("CSV export created: \(transactions.count) transactions")
+        } catch {
+            HFLogger.general.error("CSV export failed: \(error.localizedDescription)")
+        }
+
+        isExporting = false
+    }
+}
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

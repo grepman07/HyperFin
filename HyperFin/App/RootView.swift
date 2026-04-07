@@ -47,6 +47,7 @@ struct RootView: View {
                 hasCompletedOnboarding = true
             }
         }
+        .environment(dependencies)
     }
 
     private var mainTabView: some View {

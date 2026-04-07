@@ -13,15 +13,18 @@
 		352236C1B01711525C4C8776 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC288CAA192326F62BFD19D /* AppDependencies.swift */; };
 		37BBDF498E12129BDF064976 /* PlaidLinkHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8FC89250D6CBC92B50F55C3 /* PlaidLinkHandler.swift */; };
 		384D55DE8CD55D6D1CEEA486 /* HFShared in Frameworks */ = {isa = PBXBuildFile; productRef = E6B06C1539B8E0971B74B184 /* HFShared */; };
+		3DDC3B7711DAB6E21A13E32B /* BackgroundTaskManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E75DF35D133B2B6FCA553FA /* BackgroundTaskManager.swift */; };
 		3E026F17ADBC38E9B9E0E1A6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97FCC2425F67AF0B7D080CBA /* RootView.swift */; };
 		5171816361E5F2355E6179E8 /* HFNetworking in Frameworks */ = {isa = PBXBuildFile; productRef = DBC8DFF752196A673A56941A /* HFNetworking */; };
 		5A02EAB3AB2E7EA4ADF91346 /* LockScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B59E554885069DDB9AC8DEF /* LockScreenView.swift */; };
 		6302DC7F92448F5A57E98ADF /* HFSecurity in Frameworks */ = {isa = PBXBuildFile; productRef = 61FA0EE251134504B1DC6572 /* HFSecurity */; };
+		651FE9686C71C6D33684CBCA /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D404CD5A7C31F4558D6306E /* NotificationManager.swift */; };
 		6950242F8F39D900626A87C8 /* TransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0299F3B531D1B3A63D9F43AB /* TransactionsView.swift */; };
 		6F77059B4BCCE3C28DCF7D0A /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECA4017BDB3A50B712E439F /* OnboardingView.swift */; };
 		7D15025765F496689849B5A2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86261569AE7445E60380F497 /* SettingsView.swift */; };
 		8BA6410B957CB8020DE13A5D /* AlertsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 280B03BE24C1AE5D1B418439 /* AlertsView.swift */; };
 		8F74A0CE4F4434ED586EC62C /* HyperFinTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BADB672244AE24A7EE24802F /* HyperFinTests.swift */; };
+		92AA9BC7B7D17B7CD99E1910 /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5541B2396D768CCAF95C3576 /* AuthView.swift */; };
 		B1BA92FC5309FC69DD10BA4E /* SampleDataSeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39FB81FF22C2CA6430621D10 /* SampleDataSeeder.swift */; };
 		BF58F475A7F0829D373C9D2E /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D0AAF6BF2A028872566F78 /* DashboardView.swift */; };
 		C47E18075B4AE8B4898FCD01 /* HFDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 06B406D5ED72CF326F841681 /* HFDomain */; };
@@ -45,13 +48,16 @@
 
 /* Begin PBXFileReference section */
 		0299F3B531D1B3A63D9F43AB /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
+		0D404CD5A7C31F4558D6306E /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		13560AA0BA960416BF7B8F58 /* HyperFin.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HyperFin.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A8112F02A17444D32242B8B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		280B03BE24C1AE5D1B418439 /* AlertsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsView.swift; sourceTree = "<group>"; };
 		2CE9DC8B48085C653DCE0318 /* HFData */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HFData; path = Packages/HFData; sourceTree = SOURCE_ROOT; };
 		39FB81FF22C2CA6430621D10 /* SampleDataSeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleDataSeeder.swift; sourceTree = "<group>"; };
+		5541B2396D768CCAF95C3576 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		62C6E08DB82B01BAB17B630D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		646F79BBCD7A0FC53BDF6C18 /* HFShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HFShared; path = Packages/HFShared; sourceTree = SOURCE_ROOT; };
+		6E75DF35D133B2B6FCA553FA /* BackgroundTaskManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTaskManager.swift; sourceTree = "<group>"; };
 		7EB21E3C027B6FEA32E3F312 /* HFDomain */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HFDomain; path = Packages/HFDomain; sourceTree = SOURCE_ROOT; };
 		8223ED97A464517E66629B24 /* BudgetsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetsView.swift; sourceTree = "<group>"; };
 		82550B47E0FC992D4D38F6D9 /* HFNetworking */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HFNetworking; path = Packages/HFNetworking; sourceTree = SOURCE_ROOT; };
@@ -111,6 +117,7 @@
 			isa = PBXGroup;
 			children = (
 				8BC288CAA192326F62BFD19D /* AppDependencies.swift */,
+				6E75DF35D133B2B6FCA553FA /* BackgroundTaskManager.swift */,
 				B3F04EA8EB88DC1C56FFC737 /* HyperFinApp.swift */,
 				8B59E554885069DDB9AC8DEF /* LockScreenView.swift */,
 				97FCC2425F67AF0B7D080CBA /* RootView.swift */,
@@ -149,6 +156,7 @@
 			isa = PBXGroup;
 			children = (
 				280B03BE24C1AE5D1B418439 /* AlertsView.swift */,
+				0D404CD5A7C31F4558D6306E /* NotificationManager.swift */,
 			);
 			path = Alerts;
 			sourceTree = "<group>";
@@ -197,6 +205,7 @@
 			children = (
 				ADA72A53EA718FAAD6F10620 /* Accounts */,
 				55009619E658AE0D56AEBC75 /* Alerts */,
+				CAC1E0201569A423529D2E55 /* Auth */,
 				4F42C054B2697413D07CE237 /* Budgets */,
 				661FB10C6D9633E0D8034260 /* Chat */,
 				164D5BEEF3D8AB9E98E81200 /* Dashboard */,
@@ -222,6 +231,14 @@
 				F8FC89250D6CBC92B50F55C3 /* PlaidLinkHandler.swift */,
 			);
 			path = Accounts;
+			sourceTree = "<group>";
+		};
+		CAC1E0201569A423529D2E55 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				5541B2396D768CCAF95C3576 /* AuthView.swift */,
+			);
+			path = Auth;
 			sourceTree = "<group>";
 		};
 		E447A044B1C060E3018E512F = {
@@ -362,12 +379,15 @@
 				0D237C23F8263BA14B3DEA0D /* AccountsView.swift in Sources */,
 				8BA6410B957CB8020DE13A5D /* AlertsView.swift in Sources */,
 				352236C1B01711525C4C8776 /* AppDependencies.swift in Sources */,
+				92AA9BC7B7D17B7CD99E1910 /* AuthView.swift in Sources */,
+				3DDC3B7711DAB6E21A13E32B /* BackgroundTaskManager.swift in Sources */,
 				DC676F5BBF7621C82CE518DB /* BudgetsView.swift in Sources */,
 				0B181CDF3247FB50CBB6DD2E /* ChatView.swift in Sources */,
 				DEB8B8871815B58364804DD0 /* ChatViewModel.swift in Sources */,
 				BF58F475A7F0829D373C9D2E /* DashboardView.swift in Sources */,
 				D926B1B67A9830B178E1E4F4 /* HyperFinApp.swift in Sources */,
 				5A02EAB3AB2E7EA4ADF91346 /* LockScreenView.swift in Sources */,
+				651FE9686C71C6D33684CBCA /* NotificationManager.swift in Sources */,
 				6F77059B4BCCE3C28DCF7D0A /* OnboardingView.swift in Sources */,
 				37BBDF498E12129BDF064976 /* PlaidLinkHandler.swift in Sources */,
 				3E026F17ADBC38E9B9E0E1A6 /* RootView.swift in Sources */,
