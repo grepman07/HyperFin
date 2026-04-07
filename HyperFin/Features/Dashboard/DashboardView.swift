@@ -107,9 +107,10 @@ struct DashboardView: View {
                 Text("Recent Transactions")
                     .font(.headline)
                 Spacer()
-                Text("\(allTransactions.count) total")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                NavigationLink("See All") {
+                    TransactionsView()
+                }
+                .font(.subheadline)
             }
 
             ForEach(allTransactions.prefix(8)) { txn in
