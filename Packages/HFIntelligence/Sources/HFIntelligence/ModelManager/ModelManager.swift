@@ -1,6 +1,12 @@
 import Foundation
 import HFShared
 
+#if canImport(MLXLLM)
+import MLX
+import MLXLLM
+import MLXLMCommon
+#endif
+
 public enum ModelError: Error, Sendable {
     case modelNotFound
     case modelLoadFailed(String)
@@ -8,107 +14,121 @@ public enum ModelError: Error, Sendable {
     case inferenceTimeout
     case modelNotLoaded
     case downloadFailed(String)
+    case notSupported
 }
 
-public enum ModelStatus: Sendable {
+public enum ModelStatus: Sendable, Equatable {
     case notDownloaded
     case downloading(progress: Double)
     case downloaded
     case loading
     case loaded
     case error(String)
+    case notSupported
+
+    public static func == (lhs: ModelStatus, rhs: ModelStatus) -> Bool {
+        switch (lhs, rhs) {
+        case (.notDownloaded, .notDownloaded), (.downloaded, .downloaded),
+             (.loading, .loading), (.loaded, .loaded), (.notSupported, .notSupported):
+            return true
+        case (.downloading(let a), .downloading(let b)):
+            return a == b
+        case (.error(let a), .error(let b)):
+            return a == b
+        default:
+            return false
+        }
+    }
 }
 
 public actor ModelManager {
-    private var status: ModelStatus = .notDownloaded
+    private(set) public var status: ModelStatus = .notDownloaded
     private var isInferenceRunning = false
 
-    private let modelDirectory: URL
-    private let modelName: String
+    #if canImport(MLXLLM)
+    private var modelContainer: ModelContainer?
+    #endif
 
-    public init(
-        modelName: String = HFConstants.AI.modelName,
-        modelDirectory: URL? = nil
-    ) {
-        self.modelName = modelName
-        if let dir = modelDirectory {
-            self.modelDirectory = dir
-        } else {
-            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            self.modelDirectory = appSupport.appendingPathComponent(HFConstants.AI.modelDirectory)
-        }
+    private let modelId: String
+
+    public init(modelId: String = "mlx-community/gemma-3-1b-it-4bit") {
+        // Using Gemma 3 1B for broader device compatibility during development.
+        // Upgrade to gemma-4-e4b-it-4bit for production (requires more RAM).
+        self.modelId = modelId
     }
 
     public var currentStatus: ModelStatus { status }
 
-    public var modelPath: URL {
-        modelDirectory.appendingPathComponent(modelName)
+    public var isLoaded: Bool {
+        if case .loaded = status { return true }
+        return false
     }
 
-    public var isModelDownloaded: Bool {
-        FileManager.default.fileExists(atPath: modelPath.path)
-    }
-
-    public func ensureModelDirectory() throws {
-        try FileManager.default.createDirectory(at: modelDirectory, withIntermediateDirectories: true)
-    }
-
-    public func checkMemoryAvailability() -> Bool {
-        #if os(iOS)
-        let available = os_proc_available_memory()
-        let minRequired = UInt64(HFConstants.AI.minAvailableMemoryMB) * 1024 * 1024
-        let isAvailable = available > minRequired
-        HFLogger.ai.info("Available memory: \(available / 1024 / 1024)MB, required: \(HFConstants.AI.minAvailableMemoryMB)MB, ok: \(isAvailable)")
-        return isAvailable
-        #else
+    public static var isMLXSupported: Bool {
+        #if canImport(MLXLLM) && !targetEnvironment(simulator)
         return true
+        #else
+        return false
         #endif
     }
 
     public func loadModel() async throws {
-        guard isModelDownloaded else {
-            throw ModelError.modelNotFound
+        guard ModelManager.isMLXSupported else {
+            status = .notSupported
+            HFLogger.ai.info("MLX not supported on this platform (simulator or missing Metal)")
+            throw ModelError.notSupported
         }
 
-        guard checkMemoryAvailability() else {
-            throw ModelError.insufficientMemory
+        #if canImport(MLXLLM) && !targetEnvironment(simulator)
+        status = .downloading(progress: 0)
+        HFLogger.ai.info("Loading model: \(modelId)")
+
+        do {
+            // Set GPU cache limit for memory management
+            MLX.GPU.set(cacheLimit: 512 * 1024 * 1024)
+
+            let configuration = ModelConfiguration(id: modelId)
+
+            let container = try await LLMModelFactory.shared.loadContainer(
+                configuration: configuration
+            ) { [weak self] progress in
+                Task { [weak self] in
+                    await self?.updateProgress(progress.fractionCompleted)
+                }
+            }
+
+            self.modelContainer = container
+            status = .loaded
+            HFLogger.ai.info("Model loaded successfully: \(modelId)")
+        } catch {
+            let msg = error.localizedDescription
+            status = .error(msg)
+            HFLogger.ai.error("Model load failed: \(msg)")
+            throw ModelError.modelLoadFailed(msg)
         }
+        #else
+        status = .notSupported
+        throw ModelError.notSupported
+        #endif
+    }
 
-        status = .loading
-        HFLogger.ai.info("Loading model from \(self.modelPath.path)")
-
-        // MLX-Swift or Core ML model loading will be implemented here
-        // during the AI Development phase (Months 3-5).
-        //
-        // MLX-Swift approach:
-        //   let model = try await MLXModelLoader.load(from: modelPath)
-        //   self.loadedModel = model
-        //
-        // Core ML approach:
-        //   let config = MLModelConfiguration()
-        //   config.computeUnits = .cpuAndNeuralEngine
-        //   let model = try await MLModel.load(contentsOf: modelPath, configuration: config)
-
-        status = .loaded
-        HFLogger.ai.info("Model loaded successfully")
+    private func updateProgress(_ fraction: Double) {
+        status = .downloading(progress: fraction)
     }
 
     public func evict() {
-        status = .downloaded
+        #if canImport(MLXLLM)
+        modelContainer = nil
+        #endif
+        status = .notDownloaded
         HFLogger.ai.info("Model evicted from memory")
     }
 
-    public func setDownloading(progress: Double) {
-        status = .downloading(progress: progress)
+    #if canImport(MLXLLM) && !targetEnvironment(simulator)
+    public func getContainer() -> ModelContainer? {
+        modelContainer
     }
-
-    public func setDownloaded() {
-        status = .downloaded
-    }
-
-    public func setError(_ message: String) {
-        status = .error(message)
-    }
+    #endif
 
     public func acquireInference() async throws {
         while isInferenceRunning {

@@ -3,6 +3,7 @@ import SwiftData
 import HFData
 import HFDomain
 import HFShared
+import HFIntelligence
 
 struct SettingsView: View {
     @Query(sort: \SDTransaction.date, order: .reverse) private var transactions: [SDTransaction]
@@ -58,19 +59,16 @@ struct SettingsView: View {
                 }
 
                 Section("AI") {
-                    HStack {
-                        Label("On-Device AI", systemImage: "brain")
-                        Spacer()
-                        Text("Gemma 4 E4B")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    HStack {
-                        Label("Model Status", systemImage: "cpu")
-                        Spacer()
-                        Text("Ready for integration")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                    NavigationLink {
+                        AIModelView()
+                    } label: {
+                        HStack {
+                            Label("On-Device AI", systemImage: "brain")
+                            Spacer()
+                            Text(ModelManager.isMLXSupported ? "Gemma 3 1B" : "Simulator")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 

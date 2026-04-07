@@ -3,6 +3,7 @@ import SwiftData
 
 struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppDependencies.self) private var dependencies
     @State private var viewModel = ChatViewModel()
 
     var body: some View {
@@ -35,6 +36,7 @@ struct ChatView: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 viewModel.modelContainer = modelContext.container
+                viewModel.chatEngine = dependencies.chatEngine
             }
         }
     }

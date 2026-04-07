@@ -34,6 +34,8 @@ final class ChatViewModel {
 
     private let intentParser = IntentParser()
     var modelContainer: ModelContainer?
+    var chatEngine: ChatEngine?
+    var modelStatusText: String = ""
 
     func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -47,16 +49,69 @@ final class ChatViewModel {
         messages.append(ChatMessageUI(id: responseId, content: "", isUser: false, isStreaming: true))
 
         Task {
-            let response = await processQuery(text)
+            // Try ChatEngine with AI model first, fall back to local queries
+            if let engine = chatEngine {
+                let isAI = await engine.isModelAvailable
+                if isAI {
+                    await streamFromEngine(engine: engine, text: text, responseId: responseId)
+                } else {
+                    let response = await processQuery(text)
+                    updateResponse(responseId: responseId, content: response)
+                }
+            } else {
+                let response = await processQuery(text)
+                updateResponse(responseId: responseId, content: response)
+            }
+            isProcessing = false
+        }
+    }
+
+    private func updateResponse(responseId: UUID, content: String) {
+        if let idx = messages.firstIndex(where: { $0.id == responseId }) {
+            messages[idx] = ChatMessageUI(
+                id: responseId,
+                content: content,
+                isUser: false,
+                isStreaming: false
+            )
+        }
+    }
+
+    private func streamFromEngine(engine: ChatEngine, text: String, responseId: UUID) async {
+        let sessionId = UUID()
+        let recentDomain = messages.suffix(6).map { msg in
+            ChatMessage(
+                role: msg.isUser ? .user : .assistant,
+                content: msg.content,
+                sessionId: sessionId
+            )
+        }
+        let context = ChatContext(sessionId: sessionId, recentMessages: recentDomain)
+
+        do {
+            for try await token in await engine.sendMessage(text, context: context) {
+                if let idx = messages.firstIndex(where: { $0.id == responseId }) {
+                    messages[idx] = ChatMessageUI(
+                        id: responseId,
+                        content: token,
+                        isUser: false,
+                        isStreaming: true
+                    )
+                }
+            }
+            // Mark streaming complete
             if let idx = messages.firstIndex(where: { $0.id == responseId }) {
                 messages[idx] = ChatMessageUI(
                     id: responseId,
-                    content: response,
+                    content: messages[idx].content,
                     isUser: false,
                     isStreaming: false
                 )
             }
-            isProcessing = false
+        } catch {
+            // Fallback to template on AI error
+            let response = await processQuery(text)
+            updateResponse(responseId: responseId, content: response)
         }
     }
 

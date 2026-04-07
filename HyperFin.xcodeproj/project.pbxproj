@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0B181CDF3247FB50CBB6DD2E /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE410946F2815EC7F85D4EEE /* ChatView.swift */; };
+		0D0DB360CB2139D9CD105FDD /* AIModelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD240AC5F41FB7548A6ACAAE /* AIModelView.swift */; };
 		0D237C23F8263BA14B3DEA0D /* AccountsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E766BFA08AB7F91BB1712B6 /* AccountsView.swift */; };
 		1C26CDB77EDA6944D634F2DC /* HFData in Frameworks */ = {isa = PBXBuildFile; productRef = EBBB4E7ADA946CC493CCD8E2 /* HFData */; };
 		352236C1B01711525C4C8776 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC288CAA192326F62BFD19D /* AppDependencies.swift */; };
@@ -69,6 +70,7 @@
 		97FCC2425F67AF0B7D080CBA /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		9CA2CD80F33BD3A9BC359EFC /* HFSecurity */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HFSecurity; path = Packages/HFSecurity; sourceTree = SOURCE_ROOT; };
 		A9D0AAF6BF2A028872566F78 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		AD240AC5F41FB7548A6ACAAE /* AIModelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModelView.swift; sourceTree = "<group>"; };
 		B147515C49C1FCC094477572 /* HFIntelligence */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HFIntelligence; path = Packages/HFIntelligence; sourceTree = SOURCE_ROOT; };
 		B3F04EA8EB88DC1C56FFC737 /* HyperFinApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyperFinApp.swift; sourceTree = "<group>"; };
 		BADB672244AE24A7EE24802F /* HyperFinTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyperFinTests.swift; sourceTree = "<group>"; };
@@ -219,6 +221,7 @@
 		A3ED250C85BDDA8707820BFE /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				AD240AC5F41FB7548A6ACAAE /* AIModelView.swift */,
 				86261569AE7445E60380F497 /* SettingsView.swift */,
 			);
 			path = Settings;
@@ -376,6 +379,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0D0DB360CB2139D9CD105FDD /* AIModelView.swift in Sources */,
 				0D237C23F8263BA14B3DEA0D /* AccountsView.swift in Sources */,
 				8BA6410B957CB8020DE13A5D /* AlertsView.swift in Sources */,
 				352236C1B01711525C4C8776 /* AppDependencies.swift in Sources */,

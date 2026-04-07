@@ -58,6 +58,21 @@ final class AppDependencies {
         self.biometricAuth = BiometricAuthManager()
         self.keychain = KeychainManager()
 
+        // Wire ChatEngine with repositories
+        let engine = chatEngine
+        let aRepo = accountRepo
+        let tRepo = transactionRepo
+        let cRepo = categoryRepo
+        let budgetRepo = SwiftDataBudgetRepository(container: modelContainer)
+        Task { @MainActor in
+            await engine.setRepositories(
+                transactions: tRepo,
+                categories: cRepo,
+                accounts: aRepo,
+                budgets: budgetRepo
+            )
+        }
+
         // Seed sample data for testing on first launch
         let mc = modelContainer
         Task { @MainActor in
