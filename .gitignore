@@ -1,0 +1,40 @@
+# Xcode
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/
+DerivedData/
+build/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.moved-aside
+*.hmap
+*.ipa
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/*/Package.resolved
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Server
+Server/node_modules/
+Server/dist/
+Server/.env
+
+# AI Models (downloaded at runtime, not committed)
+Models/
+
+# IDE
+.vscode/
+.idea/
+
+# Secrets
+*.pem
+*.p12
+*.key
