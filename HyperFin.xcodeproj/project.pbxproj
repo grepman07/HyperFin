@@ -11,6 +11,7 @@
 		0D237C23F8263BA14B3DEA0D /* AccountsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E766BFA08AB7F91BB1712B6 /* AccountsView.swift */; };
 		1C26CDB77EDA6944D634F2DC /* HFData in Frameworks */ = {isa = PBXBuildFile; productRef = EBBB4E7ADA946CC493CCD8E2 /* HFData */; };
 		352236C1B01711525C4C8776 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BC288CAA192326F62BFD19D /* AppDependencies.swift */; };
+		37BBDF498E12129BDF064976 /* PlaidLinkHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8FC89250D6CBC92B50F55C3 /* PlaidLinkHandler.swift */; };
 		384D55DE8CD55D6D1CEEA486 /* HFShared in Frameworks */ = {isa = PBXBuildFile; productRef = E6B06C1539B8E0971B74B184 /* HFShared */; };
 		3E026F17ADBC38E9B9E0E1A6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97FCC2425F67AF0B7D080CBA /* RootView.swift */; };
 		5171816361E5F2355E6179E8 /* HFNetworking in Frameworks */ = {isa = PBXBuildFile; productRef = DBC8DFF752196A673A56941A /* HFNetworking */; };
@@ -29,6 +30,7 @@
 		DC676F5BBF7621C82CE518DB /* BudgetsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8223ED97A464517E66629B24 /* BudgetsView.swift */; };
 		DEB8B8871815B58364804DD0 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E401B7FE628E3A29FF091EAE /* ChatViewModel.swift */; };
 		E568118B0D8681475F256A36 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A8112F02A17444D32242B8B /* Assets.xcassets */; };
+		ECA81A54E093010556293B8F /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2D70D0EE1640DEA6F6FE73FF /* LinkKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -67,6 +69,7 @@
 		BECA4017BDB3A50B712E439F /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		CE410946F2815EC7F85D4EEE /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		E401B7FE628E3A29FF091EAE /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
+		F8FC89250D6CBC92B50F55C3 /* PlaidLinkHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaidLinkHandler.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,6 +83,7 @@
 				1C26CDB77EDA6944D634F2DC /* HFData in Frameworks */,
 				5171816361E5F2355E6179E8 /* HFNetworking in Frameworks */,
 				CA33C424A3B575819B2D5642 /* HFIntelligence in Frameworks */,
+				ECA81A54E093010556293B8F /* LinkKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -215,6 +219,7 @@
 			isa = PBXGroup;
 			children = (
 				8E766BFA08AB7F91BB1712B6 /* AccountsView.swift */,
+				F8FC89250D6CBC92B50F55C3 /* PlaidLinkHandler.swift */,
 			);
 			path = Accounts;
 			sourceTree = "<group>";
@@ -278,6 +283,7 @@
 				EBBB4E7ADA946CC493CCD8E2 /* HFData */,
 				DBC8DFF752196A673A56941A /* HFNetworking */,
 				7070996BCA655E38806E3383 /* HFIntelligence */,
+				2D70D0EE1640DEA6F6FE73FF /* LinkKit */,
 			);
 			productName = HyperFin;
 			productReference = 13560AA0BA960416BF7B8F58 /* HyperFin.app */;
@@ -310,6 +316,7 @@
 			mainGroup = E447A044B1C060E3018E512F;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A2D256227F35F1A747237FE4 /* XCRemoteSwiftPackageReference "plaid-link-ios" */,
 				F9A108927B45EB57BD0B16EA /* XCLocalSwiftPackageReference "Packages/HFData" */,
 				BFA77E007FAF7C5644F11B0D /* XCLocalSwiftPackageReference "Packages/HFDomain" */,
 				72568FA6C24C7A6227695BD4 /* XCLocalSwiftPackageReference "Packages/HFIntelligence" */,
@@ -362,6 +369,7 @@
 				D926B1B67A9830B178E1E4F4 /* HyperFinApp.swift in Sources */,
 				5A02EAB3AB2E7EA4ADF91346 /* LockScreenView.swift in Sources */,
 				6F77059B4BCCE3C28DCF7D0A /* OnboardingView.swift in Sources */,
+				37BBDF498E12129BDF064976 /* PlaidLinkHandler.swift in Sources */,
 				3E026F17ADBC38E9B9E0E1A6 /* RootView.swift in Sources */,
 				B1BA92FC5309FC69DD10BA4E /* SampleDataSeeder.swift in Sources */,
 				7D15025765F496689849B5A2 /* SettingsView.swift in Sources */,
@@ -634,10 +642,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		A2D256227F35F1A747237FE4 /* XCRemoteSwiftPackageReference "plaid-link-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/plaid/plaid-link-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		06B406D5ED72CF326F841681 /* HFDomain */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = HFDomain;
+		};
+		2D70D0EE1640DEA6F6FE73FF /* LinkKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A2D256227F35F1A747237FE4 /* XCRemoteSwiftPackageReference "plaid-link-ios" */;
+			productName = LinkKit;
 		};
 		61FA0EE251134504B1DC6572 /* HFSecurity */ = {
 			isa = XCSwiftPackageProductDependency;

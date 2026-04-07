@@ -26,6 +26,9 @@ packages:
     path: Packages/HFNetworking
   HFIntelligence:
     path: Packages/HFIntelligence
+  LinkKit:
+    url: https://github.com/plaid/plaid-link-ios
+    from: "5.6.0"
 
 targets:
   HyperFin:
@@ -48,6 +51,8 @@ targets:
       - package: HFData
       - package: HFNetworking
       - package: HFIntelligence
+      - package: LinkKit
+        product: LinkKit
 
   HyperFinTests:
     type: bundle.unit-test

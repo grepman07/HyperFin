@@ -2,7 +2,11 @@ import Foundation
 
 public enum HFConstants {
     public enum API {
+        #if DEBUG
+        public static let baseURL = "http://localhost:3000"
+        #else
         public static let baseURL = "https://api.hyperfin.app"
+        #endif
         public static let apiVersion = "v1"
         public static let timeoutInterval: TimeInterval = 30
     }

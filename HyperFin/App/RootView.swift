@@ -60,6 +60,7 @@ struct RootView: View {
             }
         }
         .tint(.blue)
+        .environment(dependencies)
     }
 
     @ViewBuilder
