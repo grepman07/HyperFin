@@ -1,0 +1,58 @@
+name: HyperFin
+options:
+  bundleIdPrefix: com.hyperfin
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_REQUIRED: "NO"
+
+packages:
+  HFDomain:
+    path: Packages/HFDomain
+  HFShared:
+    path: Packages/HFShared
+  HFSecurity:
+    path: Packages/HFSecurity
+  HFData:
+    path: Packages/HFData
+  HFNetworking:
+    path: Packages/HFNetworking
+  HFIntelligence:
+    path: Packages/HFIntelligence
+
+targets:
+  HyperFin:
+    type: application
+    platform: iOS
+    sources:
+      - path: HyperFin
+    settings:
+      base:
+        INFOPLIST_FILE: HyperFin/Resources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.hyperfin.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_STRICT_CONCURRENCY: complete
+    dependencies:
+      - package: HFDomain
+      - package: HFShared
+      - package: HFSecurity
+      - package: HFData
+      - package: HFNetworking
+      - package: HFIntelligence
+
+  HyperFinTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: HyperFinTests
+    dependencies:
+      - target: HyperFin

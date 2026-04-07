@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import HFData
 
 @main
 struct HyperFinApp: App {

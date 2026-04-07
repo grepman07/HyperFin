@@ -1,63 +1,66 @@
 import Foundation
 import SwiftData
+import HFDomain
+import HFShared
+import HFSecurity
+import HFData
+import HFNetworking
+import HFIntelligence
 
 /// Composition root — all dependencies are constructed here and injected via constructors.
-/// No DI framework needed.
 @Observable
 final class AppDependencies {
     let modelContainer: ModelContainer
 
-    // Repositories — would be initialized from HFData package
-    // let accountRepo: AccountRepository
-    // let transactionRepo: TransactionRepository
-    // let categoryRepo: CategoryRepository
-    // let budgetRepo: BudgetRepository
-    // let merchantMappingRepo: MerchantMappingRepository
-    // let chatMessageRepo: ChatMessageRepository
-    // let alertConfigRepo: AlertConfigRepository
-    // let userProfileRepo: UserProfileRepository
+    // Repositories
+    let accountRepo: SwiftDataAccountRepository
+    let transactionRepo: SwiftDataTransactionRepository
+    let categoryRepo: SwiftDataCategoryRepository
 
-    // Services — would be initialized from HFNetworking + HFIntelligence
-    // let apiClient: APIClient
-    // let authService: AuthService
-    // let plaidService: PlaidService
-    // let modelManager: ModelManager
-    // let inferenceEngine: InferenceEngine
-    // let chatEngine: ChatEngine
-    // let categorizer: TransactionCategorizerImpl
+    // Networking
+    let apiClient: APIClient
+    let authService: AuthService
+    let plaidService: PlaidService
+
+    // AI
+    let modelManager: ModelManager
+    let inferenceEngine: InferenceEngine
+    let chatEngine: ChatEngine
 
     // Security
-    // let biometricAuth: BiometricAuthManager
-    // let keychain: KeychainManager
+    let biometricAuth: BiometricAuthManager
+    let keychain: KeychainManager
 
     init() {
-        // Initialize SwiftData container
+        // SwiftData container with all model types
         do {
-            self.modelContainer = try ModelContainer(for: Schema([]))
+            self.modelContainer = try SwiftDataContainer.create()
         } catch {
-            fatalError("Failed to create ModelContainer: \(error)")
+            fatalError("Failed to create SwiftData container: \(error)")
         }
 
-        // Full dependency wiring will be enabled once packages are
-        // linked to the Xcode project target. Example:
-        //
-        // let container = try SwiftDataContainer.create()
-        // self.modelContainer = container
-        //
-        // self.accountRepo = SwiftDataAccountRepository(container: container)
-        // self.transactionRepo = SwiftDataTransactionRepository(container: container)
-        // self.categoryRepo = SwiftDataCategoryRepository(container: container)
-        //
-        // self.apiClient = APIClient()
-        // self.authService = AuthService(apiClient: apiClient)
-        // self.plaidService = PlaidService(apiClient: apiClient)
-        //
-        // self.modelManager = ModelManager()
-        // self.inferenceEngine = InferenceEngine(modelManager: modelManager)
-        // self.chatEngine = ChatEngine(inferenceEngine: inferenceEngine, modelManager: modelManager)
-        // self.chatEngine.setRepositories(...)
-        //
-        // self.biometricAuth = BiometricAuthManager()
-        // self.keychain = KeychainManager()
+        // Repositories
+        self.accountRepo = SwiftDataAccountRepository(container: modelContainer)
+        self.transactionRepo = SwiftDataTransactionRepository(container: modelContainer)
+        self.categoryRepo = SwiftDataCategoryRepository(container: modelContainer)
+
+        // Networking
+        self.apiClient = APIClient()
+        self.authService = AuthService(apiClient: apiClient)
+        self.plaidService = PlaidService(apiClient: apiClient)
+
+        // AI Engine
+        self.modelManager = ModelManager()
+        self.inferenceEngine = InferenceEngine(modelManager: modelManager)
+        self.chatEngine = ChatEngine(inferenceEngine: inferenceEngine, modelManager: modelManager)
+
+        // Security
+        self.biometricAuth = BiometricAuthManager()
+        self.keychain = KeychainManager()
+
+        // Seed system categories on first launch
+        Task {
+            try? await categoryRepo.seedSystemCategories()
+        }
     }
 }
