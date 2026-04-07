@@ -21,6 +21,7 @@
 		7D15025765F496689849B5A2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86261569AE7445E60380F497 /* SettingsView.swift */; };
 		8BA6410B957CB8020DE13A5D /* AlertsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 280B03BE24C1AE5D1B418439 /* AlertsView.swift */; };
 		8F74A0CE4F4434ED586EC62C /* HyperFinTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BADB672244AE24A7EE24802F /* HyperFinTests.swift */; };
+		B1BA92FC5309FC69DD10BA4E /* SampleDataSeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39FB81FF22C2CA6430621D10 /* SampleDataSeeder.swift */; };
 		BF58F475A7F0829D373C9D2E /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9D0AAF6BF2A028872566F78 /* DashboardView.swift */; };
 		C47E18075B4AE8B4898FCD01 /* HFDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 06B406D5ED72CF326F841681 /* HFDomain */; };
 		CA33C424A3B575819B2D5642 /* HFIntelligence in Frameworks */ = {isa = PBXBuildFile; productRef = 7070996BCA655E38806E3383 /* HFIntelligence */; };
@@ -46,6 +47,7 @@
 		1A8112F02A17444D32242B8B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		280B03BE24C1AE5D1B418439 /* AlertsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsView.swift; sourceTree = "<group>"; };
 		2CE9DC8B48085C653DCE0318 /* HFData */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HFData; path = Packages/HFData; sourceTree = SOURCE_ROOT; };
+		39FB81FF22C2CA6430621D10 /* SampleDataSeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleDataSeeder.swift; sourceTree = "<group>"; };
 		62C6E08DB82B01BAB17B630D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		646F79BBCD7A0FC53BDF6C18 /* HFShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HFShared; path = Packages/HFShared; sourceTree = SOURCE_ROOT; };
 		7EB21E3C027B6FEA32E3F312 /* HFDomain */ = {isa = PBXFileReference; lastKnownFileType = folder; name = HFDomain; path = Packages/HFDomain; sourceTree = SOURCE_ROOT; };
@@ -108,6 +110,7 @@
 				B3F04EA8EB88DC1C56FFC737 /* HyperFinApp.swift */,
 				8B59E554885069DDB9AC8DEF /* LockScreenView.swift */,
 				97FCC2425F67AF0B7D080CBA /* RootView.swift */,
+				39FB81FF22C2CA6430621D10 /* SampleDataSeeder.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -360,6 +363,7 @@
 				5A02EAB3AB2E7EA4ADF91346 /* LockScreenView.swift in Sources */,
 				6F77059B4BCCE3C28DCF7D0A /* OnboardingView.swift in Sources */,
 				3E026F17ADBC38E9B9E0E1A6 /* RootView.swift in Sources */,
+				B1BA92FC5309FC69DD10BA4E /* SampleDataSeeder.swift in Sources */,
 				7D15025765F496689849B5A2 /* SettingsView.swift in Sources */,
 				6950242F8F39D900626A87C8 /* TransactionsView.swift in Sources */,
 			);

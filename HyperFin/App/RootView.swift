@@ -1,10 +1,13 @@
 import SwiftUI
+import SwiftData
+import HFData
 
 struct RootView: View {
     let dependencies: AppDependencies
     @State private var isAuthenticated = false
     @State private var hasCompletedOnboarding = false
     @State private var selectedTab: Tab = .chat
+    @Query private var profiles: [SDUserProfile]
 
     enum Tab: String, CaseIterable {
         case chat = "Chat"
@@ -32,6 +35,16 @@ struct RootView: View {
                 OnboardingView(isComplete: $hasCompletedOnboarding)
             } else {
                 mainTabView
+            }
+        }
+        .onChange(of: profiles.count) {
+            if let profile = profiles.first, profile.onboardingCompleted {
+                hasCompletedOnboarding = true
+            }
+        }
+        .onAppear {
+            if let profile = profiles.first, profile.onboardingCompleted {
+                hasCompletedOnboarding = true
             }
         }
     }

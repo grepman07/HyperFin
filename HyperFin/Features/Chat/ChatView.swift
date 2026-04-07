@@ -1,6 +1,8 @@
 import SwiftUI
+import SwiftData
 
 struct ChatView: View {
+    @Environment(\.modelContext) private var modelContext
     @State private var viewModel = ChatViewModel()
 
     var body: some View {
@@ -31,6 +33,9 @@ struct ChatView: View {
             }
             .navigationTitle("HyperFin")
             .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                viewModel.modelContainer = modelContext.container
+            }
         }
     }
 
@@ -43,6 +48,9 @@ struct ChatView: View {
                 .padding(.vertical, 10)
                 .background(Color(.systemGray6))
                 .clipShape(RoundedRectangle(cornerRadius: 20))
+                .onSubmit {
+                    viewModel.sendMessage()
+                }
 
             Button {
                 viewModel.sendMessage()
@@ -67,7 +75,7 @@ struct ChatBubbleView: View {
             if message.isUser { Spacer(minLength: 60) }
 
             VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
-                Text(message.content)
+                Text(LocalizedStringKey(message.content))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(message.isUser ? Color.blue : Color(.systemGray5))

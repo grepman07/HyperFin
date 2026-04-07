@@ -58,10 +58,11 @@ final class AppDependencies {
         self.biometricAuth = BiometricAuthManager()
         self.keychain = KeychainManager()
 
-        // Seed system categories on first launch
-        let repo = categoryRepo
+        // Seed sample data for testing on first launch
+        let mc = modelContainer
         Task { @MainActor in
-            try? await repo.seedSystemCategories()
+            let seeder = SampleDataSeeder(container: mc)
+            await seeder.seedIfNeeded()
         }
     }
 }
