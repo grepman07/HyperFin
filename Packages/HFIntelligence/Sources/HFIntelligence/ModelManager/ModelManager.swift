@@ -51,9 +51,7 @@ public actor ModelManager {
 
     private let modelId: String
 
-    public init(modelId: String = "mlx-community/gemma-3-1b-it-4bit") {
-        // Using Gemma 3 1B for broader device compatibility during development.
-        // Upgrade to gemma-4-e4b-it-4bit for production (requires more RAM).
+    public init(modelId: String = "mlx-community/gemma-4-e4b-it-4bit") {
         self.modelId = modelId
     }
 
