@@ -7,7 +7,7 @@ public enum HFConstants {
         // Change this to your Mac's current IP (run: ipconfig getifaddr en0).
         public static let baseURL = "http://192.168.7.21:3000"
         #else
-        public static let baseURL = "https://api.hyperfin.app"
+        public static let baseURL = "https://hyperfin-server-dzlsx.ondigitalocean.app"
         #endif
         public static let apiVersion = "v1"
         public static let timeoutInterval: TimeInterval = 30
