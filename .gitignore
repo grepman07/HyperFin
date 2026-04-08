@@ -28,7 +28,8 @@ Server/dist/
 Server/.env
 
 # AI Models (downloaded at runtime, not committed)
-Models/
+# Only ignore the top-level Models directory, not package source directories
+/Models/
 
 # IDE
 .vscode/

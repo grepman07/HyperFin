@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
 import HFData
 import HFDomain
 import HFShared
@@ -14,6 +15,11 @@ struct TransactionsView: View {
     @State private var selectedAccountId: UUID?
     @State private var selectedTransaction: SDTransaction?
     @State private var showCategoryPicker = false
+    @State private var showReceiptScan = false
+    @State private var showCamera = false
+    @State private var showPhotoPicker = false
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var receiptImage: UIImage?
 
     private var filteredTransactions: [SDTransaction] {
         var result = transactions
@@ -62,6 +68,47 @@ struct TransactionsView: View {
             }
             .navigationTitle("Transactions")
             .searchable(text: $searchText, prompt: "Search by merchant or description")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button {
+                            showPhotoPicker = true
+                        } label: {
+                            Label("Choose from Photos", systemImage: "photo.on.rectangle")
+                        }
+
+                        Button {
+                            showCamera = true
+                        } label: {
+                            Label("Take Photo", systemImage: "camera")
+                        }
+                    } label: {
+                        Image(systemName: "doc.text.viewfinder")
+                    }
+                }
+            }
+            .photosPicker(isPresented: $showPhotoPicker, selection: $selectedPhotoItem, matching: .images)
+            .onChange(of: selectedPhotoItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    if let data = try? await newItem.loadTransferable(type: Data.self),
+                       let image = UIImage(data: data) {
+                        receiptImage = image
+                        showReceiptScan = true
+                    }
+                    selectedPhotoItem = nil
+                }
+            }
+            .fullScreenCover(isPresented: $showCamera) {
+                CameraView { image in
+                    receiptImage = image
+                    showReceiptScan = true
+                }
+                .ignoresSafeArea()
+            }
+            .sheet(isPresented: $showReceiptScan) {
+                ReceiptScanView(initialImage: receiptImage)
+            }
             .sheet(isPresented: $showCategoryPicker) {
                 if let txn = selectedTransaction {
                     CategoryPickerSheet(

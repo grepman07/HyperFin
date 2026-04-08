@@ -25,6 +25,8 @@ public enum HFConstants {
         public static let maxGenerationTokens = 512
         public static let temperature: Float = 0.7
         public static let minAvailableMemoryMB = 512
+        public static let receiptParsingMaxTokens = 256
+        public static let receiptParsingTemperature: Float = 0.1
     }
 
     public enum Budget {

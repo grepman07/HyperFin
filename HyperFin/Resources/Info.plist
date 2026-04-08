@@ -37,6 +37,8 @@
 	<array>
 		<string>_http._tcp</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>HyperFin uses the camera to scan receipts and create transactions.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>HyperFin uses Face ID to securely unlock your financial data.</string>
 	<key>UILaunchScreen</key>

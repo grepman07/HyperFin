@@ -10,6 +10,8 @@ struct SettingsView: View {
     @Query(sort: \SDCategory.name) private var categories: [SDCategory]
     @Query(sort: \SDAccount.institutionName) private var accounts: [SDAccount]
 
+    @Query private var profiles: [SDUserProfile]
+
     @State private var showExportShare = false
     @State private var exportURL: URL?
     @State private var isExporting = false
@@ -70,6 +72,18 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    NavigationLink {
+                        TonePickerView(profile: profiles.first)
+                    } label: {
+                        HStack {
+                            Label("Chat Tone", systemImage: currentTone.icon)
+                            Spacer()
+                            Text(currentTone.displayName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 Section("Privacy") {
@@ -103,6 +117,11 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var currentTone: ChatTone {
+        guard let profile = profiles.first else { return .professional }
+        return ChatTone(rawValue: profile.chatToneRaw) ?? .professional
     }
 
     private func exportCSV() {
@@ -139,6 +158,66 @@ struct SettingsView: View {
         }
 
         isExporting = false
+    }
+}
+
+struct TonePickerView: View {
+    @Environment(\.modelContext) private var modelContext
+    let profile: SDUserProfile?
+
+    private var selectedTone: ChatTone {
+        guard let profile else { return .professional }
+        return ChatTone(rawValue: profile.chatToneRaw) ?? .professional
+    }
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(ChatTone.allCases, id: \.self) { tone in
+                    Button {
+                        setTone(tone)
+                    } label: {
+                        HStack {
+                            Image(systemName: tone.icon)
+                                .foregroundStyle(.blue)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(tone.displayName)
+                                    .foregroundStyle(.primary)
+                                Text(toneDescription(tone))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if selectedTone == tone {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                    }
+                }
+            } footer: {
+                Text("Controls how HyperFin responds to your financial questions.")
+            }
+        }
+        .navigationTitle("Chat Tone")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func toneDescription(_ tone: ChatTone) -> String {
+        switch tone {
+        case .professional: "Clear, businesslike responses"
+        case .friendly: "Warm, casual, and encouraging"
+        case .funny: "Witty with playful financial humor"
+        case .strict: "No-nonsense accountability coach"
+        }
+    }
+
+    private func setTone(_ tone: ChatTone) {
+        if let profile {
+            profile.chatToneRaw = tone.rawValue
+            try? modelContext.save()
+        }
     }
 }
 

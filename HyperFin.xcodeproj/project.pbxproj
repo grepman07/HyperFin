@@ -35,6 +35,8 @@
 		DEB8B8871815B58364804DD0 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E401B7FE628E3A29FF091EAE /* ChatViewModel.swift */; };
 		E568118B0D8681475F256A36 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1A8112F02A17444D32242B8B /* Assets.xcassets */; };
 		ECA81A54E093010556293B8F /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2D70D0EE1640DEA6F6FE73FF /* LinkKit */; };
+		F1A2B3C4D5E6F70891A2B3C4 /* ReceiptScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A1B2C3D4 /* ReceiptScanView.swift */; };
+		F2A3B4C5D6E7F80912A3B4C5 /* ReceiptScanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6071829B2C3D4E5 /* ReceiptScanViewModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +51,8 @@
 
 /* Begin PBXFileReference section */
 		0299F3B531D1B3A63D9F43AB /* TransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionsView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718A1B2C3D4 /* ReceiptScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptScanView.swift; sourceTree = "<group>"; };
+		B2C3D4E5F6071829B2C3D4E5 /* ReceiptScanViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReceiptScanViewModel.swift; sourceTree = "<group>"; };
 		0D404CD5A7C31F4558D6306E /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		13560AA0BA960416BF7B8F58 /* HyperFin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HyperFin.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A8112F02A17444D32242B8B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -257,6 +261,8 @@
 		E4936A79C0AE0E431AD4C184 /* Transactions */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F60718A1B2C3D4 /* ReceiptScanView.swift */,
+				B2C3D4E5F6071829B2C3D4E5 /* ReceiptScanViewModel.swift */,
 				0299F3B531D1B3A63D9F43AB /* TransactionsView.swift */,
 			);
 			path = Transactions;
@@ -394,6 +400,8 @@
 				3E026F17ADBC38E9B9E0E1A6 /* RootView.swift in Sources */,
 				B1BA92FC5309FC69DD10BA4E /* SampleDataSeeder.swift in Sources */,
 				7D15025765F496689849B5A2 /* SettingsView.swift in Sources */,
+				F1A2B3C4D5E6F70891A2B3C4 /* ReceiptScanView.swift in Sources */,
+				F2A3B4C5D6E7F80912A3B4C5 /* ReceiptScanViewModel.swift in Sources */,
 				6950242F8F39D900626A87C8 /* TransactionsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

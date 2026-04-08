@@ -4,6 +4,7 @@ import SwiftData
 struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppDependencies.self) private var dependencies
+    @FocusState private var isInputFocused: Bool
     @State private var viewModel = ChatViewModel()
 
     var body: some View {
@@ -19,6 +20,7 @@ struct ChatView: View {
                         }
                         .padding()
                     }
+                    .scrollDismissesKeyboard(.immediately)
                     .onChange(of: viewModel.messages.count) {
                         if let last = viewModel.messages.last {
                             withAnimation {
@@ -34,6 +36,14 @@ struct ChatView: View {
             }
             .navigationTitle("HyperFin")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        isInputFocused = false
+                    }
+                }
+            }
             .onAppear {
                 viewModel.modelContainer = modelContext.container
                 viewModel.chatEngine = dependencies.chatEngine
@@ -45,6 +55,7 @@ struct ChatView: View {
         HStack(spacing: 12) {
             TextField("Ask about your finances...", text: $viewModel.inputText, axis: .vertical)
                 .textFieldStyle(.plain)
+                .focused($isInputFocused)
                 .lineLimit(1...4)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -52,10 +63,12 @@ struct ChatView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 20))
                 .onSubmit {
                     viewModel.sendMessage()
+                    isInputFocused = false
                 }
 
             Button {
                 viewModel.sendMessage()
+                isInputFocused = false
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 32))

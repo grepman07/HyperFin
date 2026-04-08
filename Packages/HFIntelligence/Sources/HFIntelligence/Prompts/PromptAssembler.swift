@@ -9,9 +9,10 @@ public struct PromptAssembler: Sendable {
         userQuery: String,
         intent: ChatIntent,
         financialContext: FinancialContext,
-        conversationHistory: [ChatMessage]
+        conversationHistory: [ChatMessage],
+        tone: ChatTone = .professional
     ) -> String {
-        var prompt = systemPrompt()
+        var prompt = systemPrompt(tone: tone)
         prompt += "\n\n"
 
         let contextSection = buildContextSection(intent: intent, context: financialContext)
@@ -30,16 +31,28 @@ public struct PromptAssembler: Sendable {
         return prompt
     }
 
-    private func systemPrompt() -> String {
-        """
+    private func systemPrompt(tone: ChatTone) -> String {
+        let toneInstruction: String = switch tone {
+        case .professional:
+            "Respond in a professional, clear, and businesslike tone."
+        case .friendly:
+            "Respond in a warm, friendly, and encouraging tone. Use casual language."
+        case .funny:
+            "Respond in a witty, humorous tone. Add light jokes or playful comments about spending habits, but keep the financial data accurate."
+        case .strict:
+            "Respond in a strict, no-nonsense tone. Be direct and hold the user accountable for overspending. Don't sugarcoat bad habits."
+        }
+
+        return """
         <start_of_turn>system
-        You are HyperFin, a helpful and professional AI finance coach. You help users \
+        You are HyperFin, an AI finance coach. You help users \
         understand their spending, manage budgets, and make better financial decisions.
+
+        Tone: \(toneInstruction)
 
         Guidelines:
         - Be concise and direct. Lead with the answer.
         - Use exact dollar amounts when you have financial data.
-        - Be encouraging but honest about spending patterns.
         - Never give specific investment advice or recommendations to buy/sell securities.
         - If asked about something outside your data, say so clearly.
         - Format currency as $X,XXX.XX.

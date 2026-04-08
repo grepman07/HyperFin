@@ -58,11 +58,13 @@ public actor ChatEngine {
 
                     // If model is loaded, use AI inference
                     if await modelManager.isLoaded {
+                        let tone = context.userProfile?.chatTone ?? .professional
                         let prompt = promptAssembler.assemble(
                             userQuery: text,
                             intent: intent,
                             financialContext: financialContext,
-                            conversationHistory: context.recentMessages
+                            conversationHistory: context.recentMessages,
+                            tone: tone
                         )
 
                         let request = InferenceRequest(prompt: prompt)

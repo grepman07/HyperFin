@@ -86,7 +86,16 @@ final class ChatViewModel {
                 sessionId: sessionId
             )
         }
-        let context = ChatContext(sessionId: sessionId, recentMessages: recentDomain)
+
+        // Load user profile for tone setting
+        var userProfile: UserProfile?
+        if let container = modelContainer {
+            let ctx = container.mainContext
+            let profiles = (try? ctx.fetch(FetchDescriptor<SDUserProfile>())) ?? []
+            userProfile = profiles.first?.toDomain()
+        }
+
+        let context = ChatContext(sessionId: sessionId, recentMessages: recentDomain, userProfile: userProfile)
 
         do {
             for try await token in await engine.sendMessage(text, context: context) {
