@@ -14,7 +14,7 @@ struct AIModelView: View {
                 HStack {
                     Label("Model", systemImage: "brain")
                     Spacer()
-                    Text("Gemma 4 E4B (4-bit)")
+                    Text("Gemma 3 1B (4-bit)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -59,7 +59,7 @@ struct AIModelView: View {
                             if isLoading {
                                 ProgressView()
                             } else {
-                                Text("~1.2 GB")
+                                Text("~733 MB")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -106,6 +106,15 @@ struct AIModelView: View {
         errorMessage = nil
 
         Task {
+            // Poll model status during download so UI updates
+            let pollTask = Task {
+                while !Task.isCancelled {
+                    let s = await dependencies.modelManager.currentStatus
+                    await MainActor.run { modelStatus = s }
+                    try await Task.sleep(for: .milliseconds(200))
+                }
+            }
+
             do {
                 try await dependencies.modelManager.loadModel()
                 modelStatus = await dependencies.modelManager.currentStatus
@@ -116,6 +125,7 @@ struct AIModelView: View {
                 errorMessage = error.localizedDescription
                 modelStatus = .error(error.localizedDescription)
             }
+            pollTask.cancel()
             isLoading = false
         }
     }

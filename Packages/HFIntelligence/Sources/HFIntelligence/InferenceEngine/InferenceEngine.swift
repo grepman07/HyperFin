@@ -31,72 +31,85 @@ public actor InferenceEngine {
     }
 
     public func generate(_ request: InferenceRequest) -> AsyncThrowingStream<String, Error> {
-        AsyncThrowingStream { continuation in
+        #if canImport(MLXLLM) && !targetEnvironment(simulator)
+        let manager = self.modelManager
+        return AsyncThrowingStream { continuation in
             Task {
                 do {
-                    try await modelManager.acquireInference()
-                    defer { Task { await modelManager.releaseInference() } }
+                    try await manager.acquireInference()
 
-                    guard await modelManager.isLoaded else {
+                    guard await manager.isLoaded else {
+                        await manager.releaseInference()
                         continuation.yield("[Model not loaded]")
                         continuation.finish()
                         return
                     }
 
-                    #if canImport(MLXLLM) && !targetEnvironment(simulator)
-                    try await generateWithMLX(request: request, continuation: continuation)
-                    #else
-                    continuation.yield("[AI engine requires a physical device with Apple Silicon]")
-                    continuation.finish()
-                    #endif
+                    guard let container = await manager.getContainer() else {
+                        await manager.releaseInference()
+                        continuation.finish(throwing: ModelError.modelNotLoaded)
+                        return
+                    }
 
+                    HFLogger.ai.debug("Starting MLX inference (\(request.maxTokens) max tokens)")
+
+                    let lmInput = try await container.prepare(input: UserInput(prompt: request.prompt))
+                    let parameters = GenerateParameters(temperature: request.temperature)
+                    let stream = try await container.generate(input: lmInput, parameters: parameters)
+
+                    var tokenCount = 0
+                    var fullText = ""
+                    var shouldStop = false
+                    for await generation in stream {
+                        if shouldStop { break }
+                        switch generation {
+                        case .chunk(let text):
+                            tokenCount += 1
+                            if tokenCount > request.maxTokens { break }
+
+                            // Stop on Gemma end-of-turn tokens
+                            if text.contains("<end_of_turn>") || text.contains("<eos>") {
+                                let cleaned = text
+                                    .replacingOccurrences(of: "<end_of_turn>", with: "")
+                                    .replacingOccurrences(of: "<eos>", with: "")
+                                if !cleaned.isEmpty {
+                                    fullText += cleaned
+                                }
+                                shouldStop = true
+                                break
+                            }
+
+                            // Strip any other control tokens
+                            let cleanText = text
+                                .replacingOccurrences(of: "<start_of_turn>", with: "")
+                                .replacingOccurrences(of: "<end_of_turn>", with: "")
+                            fullText += cleanText
+                            continuation.yield(fullText)
+
+                        case .info(let info):
+                            HFLogger.ai.debug("Inference complete: \(info.promptTokenCount) prompt tokens, \(String(format: "%.1f", info.tokensPerSecond)) tok/s")
+
+                        default:
+                            break
+                        }
+                    }
+
+                    await manager.releaseInference()
+                    continuation.finish()
                 } catch {
+                    await manager.releaseInference()
                     HFLogger.ai.error("Inference failed: \(error.localizedDescription)")
                     continuation.finish(throwing: error)
                 }
             }
         }
-    }
-
-    #if canImport(MLXLLM) && !targetEnvironment(simulator)
-    private func generateWithMLX(
-        request: InferenceRequest,
-        continuation: AsyncThrowingStream<String, Error>.Continuation
-    ) async throws {
-        guard let container = await modelManager.getContainer() else {
-            throw ModelError.modelNotLoaded
+        #else
+        return AsyncThrowingStream { continuation in
+            continuation.yield("[AI engine requires a physical device with Apple Silicon]")
+            continuation.finish()
         }
-
-        HFLogger.ai.debug("Starting MLX inference (\(request.maxTokens) max tokens)")
-
-        // Prepare input using container's thread-safe convenience method
-        let lmInput = try await container.prepare(input: UserInput(prompt: request.prompt))
-
-        // Stream generation
-        let parameters = GenerateParameters(temperature: request.temperature)
-        let stream = try await container.generate(input: lmInput, parameters: parameters)
-
-        var tokenCount = 0
-        var fullText = ""
-        for await generation in stream {
-            switch generation {
-            case .chunk(let text):
-                tokenCount += 1
-                if tokenCount > request.maxTokens { break }
-                fullText += text
-                continuation.yield(fullText)
-
-            case .info(let info):
-                HFLogger.ai.debug("Inference complete: \(info.promptTokenCount) prompt tokens, \(String(format: "%.1f", info.tokensPerSecond)) tok/s")
-
-            default:
-                break
-            }
-        }
-
-        continuation.finish()
+        #endif
     }
-    #endif
 
     public func generateComplete(_ request: InferenceRequest) async throws -> String {
         var result = ""

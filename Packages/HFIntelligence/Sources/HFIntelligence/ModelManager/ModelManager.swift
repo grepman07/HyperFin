@@ -1,5 +1,6 @@
 import Foundation
 import HFShared
+import os
 
 #if canImport(MLXLLM)
 import MLX
@@ -41,6 +42,19 @@ public enum ModelStatus: Sendable, Equatable {
     }
 }
 
+/// Thread-safe progress tracker that can be updated from any isolation context.
+private final class ProgressTracker: Sendable {
+    private let _fraction: OSAllocatedUnfairLock<Double> = .init(initialState: 0)
+
+    var fraction: Double {
+        _fraction.withLock { $0 }
+    }
+
+    func update(_ value: Double) {
+        _fraction.withLock { $0 = value }
+    }
+}
+
 public actor ModelManager {
     private(set) public var status: ModelStatus = .notDownloaded
     private var isInferenceRunning = false
@@ -51,7 +65,7 @@ public actor ModelManager {
 
     private let modelId: String
 
-    public init(modelId: String = "mlx-community/gemma-4-e4b-it-4bit") {
+    public init(modelId: String = "mlx-community/gemma-3-1b-it-4bit") {
         self.modelId = modelId
     }
 
@@ -83,18 +97,30 @@ public actor ModelManager {
         HFLogger.ai.info("Loading model: \(currentModelId)")
 
         do {
-            // Set GPU cache limit for memory management
-            MLX.GPU.set(cacheLimit: 512 * 1024 * 1024)
+            // Reduce GPU cache to leave more memory for model weights
+            MLX.GPU.set(cacheLimit: 256 * 1024 * 1024)
 
             let configuration = ModelConfiguration(id: currentModelId)
 
-            let container = try await LLMModelFactory.shared.loadContainer(
-                configuration: configuration
-            ) { [weak self] progress in
-                Task { [weak self] in
-                    await self?.updateProgress(progress.fractionCompleted)
+            // Use a lock-based tracker so the progress callback doesn't need actor access
+            let tracker = ProgressTracker()
+
+            // Poll progress in a separate task since the callback can't await actor methods
+            let pollTask = Task { [weak self] in
+                while !Task.isCancelled {
+                    let frac = tracker.fraction
+                    await self?.updateProgress(frac)
+                    try await Task.sleep(for: .milliseconds(250))
                 }
             }
+
+            let container = try await LLMModelFactory.shared.loadContainer(
+                configuration: configuration
+            ) { progress in
+                tracker.update(progress.fractionCompleted)
+            }
+
+            pollTask.cancel()
 
             self.modelContainer = container
             status = .loaded

@@ -23,6 +23,14 @@ public enum SwiftDataContainer {
             allowsSave: true
         )
 
+        // Pre-create Application Support directory to avoid CoreData recovery noise
+        if !inMemory {
+            let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            if !FileManager.default.fileExists(atPath: appSupport.path) {
+                try FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
+            }
+        }
+
         HFLogger.data.info("Creating SwiftData container (inMemory: \(inMemory))")
         return try ModelContainer(for: schema, configurations: [configuration])
     }

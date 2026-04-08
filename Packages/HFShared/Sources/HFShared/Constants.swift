@@ -3,7 +3,9 @@ import Foundation
 public enum HFConstants {
     public enum API {
         #if DEBUG
-        public static let baseURL = "http://localhost:3000"
+        // Use Mac's local IP so physical devices can reach the dev server.
+        // Change this to your Mac's current IP (run: ipconfig getifaddr en0).
+        public static let baseURL = "http://192.168.7.21:3000"
         #else
         public static let baseURL = "https://api.hyperfin.app"
         #endif
@@ -18,7 +20,7 @@ public enum HFConstants {
     }
 
     public enum AI {
-        public static let modelName = "gemma-4-e4b-it-4bit"
+        public static let modelName = "gemma-3-1b-it-4bit"
         public static let modelDirectory = "Models"
         public static let maxGenerationTokens = 512
         public static let temperature: Float = 0.7

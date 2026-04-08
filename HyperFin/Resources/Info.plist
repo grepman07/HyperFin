@@ -31,6 +31,12 @@
 	<array>
 		<string>com.hyperfin.app.refresh</string>
 	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>HyperFin connects to a local development server for bank account linking.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_http._tcp</string>
+	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>HyperFin uses Face ID to securely unlock your financial data.</string>
 	<key>UILaunchScreen</key>
@@ -42,6 +48,8 @@
 	<array>
 		<string>arm64</string>
 	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
