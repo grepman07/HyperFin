@@ -14,8 +14,10 @@ struct ChatView: View {
                     ScrollView {
                         LazyVStack(spacing: 12) {
                             ForEach(viewModel.messages) { message in
-                                ChatBubbleView(message: message)
-                                    .id(message.id)
+                                ChatBubbleView(message: message) { rating in
+                                    viewModel.rateFeedback(messageId: message.id, rating: rating)
+                                }
+                                .id(message.id)
                             }
                         }
                         .padding()
@@ -90,6 +92,7 @@ struct ChatView: View {
 
 struct ChatBubbleView: View {
     let message: ChatMessageUI
+    var onRate: ((FeedbackRating) -> Void)?
 
     var body: some View {
         HStack {
@@ -107,9 +110,37 @@ struct ChatBubbleView: View {
                     ProgressView()
                         .scaleEffect(0.7)
                 }
+
+                // Feedback buttons for completed AI responses
+                if !message.isUser && !message.isStreaming && !message.content.isEmpty {
+                    feedbackButtons
+                }
             }
 
             if !message.isUser { Spacer(minLength: 60) }
         }
+    }
+
+    private var feedbackButtons: some View {
+        HStack(spacing: 12) {
+            Button {
+                onRate?(message.rating == .positive ? .none : .positive)
+            } label: {
+                Image(systemName: message.rating == .positive ? "hand.thumbsup.fill" : "hand.thumbsup")
+                    .font(.caption)
+                    .foregroundStyle(message.rating == .positive ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                onRate?(message.rating == .negative ? .none : .negative)
+            } label: {
+                Image(systemName: message.rating == .negative ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                    .font(.caption)
+                    .foregroundStyle(message.rating == .negative ? .red : .secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 2)
     }
 }

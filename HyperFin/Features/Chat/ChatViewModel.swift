@@ -6,17 +6,23 @@ import HFData
 import HFIntelligence
 import HFShared
 
+enum FeedbackRating: Sendable {
+    case none, positive, negative
+}
+
 struct ChatMessageUI: Identifiable {
     let id: UUID
     let content: String
     let isUser: Bool
     var isStreaming: Bool
+    var rating: FeedbackRating
 
-    init(id: UUID = UUID(), content: String, isUser: Bool, isStreaming: Bool = false) {
+    init(id: UUID = UUID(), content: String, isUser: Bool, isStreaming: Bool = false, rating: FeedbackRating = .none) {
         self.id = id
         self.content = content
         self.isUser = isUser
         self.isStreaming = isStreaming
+        self.rating = rating
     }
 }
 
@@ -56,6 +62,17 @@ final class ChatViewModel {
             await streamFromEngine(engine: engine, text: text, responseId: responseId)
             isProcessing = false
         }
+    }
+
+    func rateFeedback(messageId: UUID, rating: FeedbackRating) {
+        guard let idx = messages.firstIndex(where: { $0.id == messageId }) else { return }
+        messages[idx].rating = rating
+
+        // Find the user query that preceded this response
+        let userQuery = messages.prefix(idx).last(where: { $0.isUser })?.content ?? ""
+
+        let ratingStr = rating == .positive ? "positive" : "negative"
+        HFLogger.ai.info("Feedback: \(ratingStr) | query: \(userQuery) | response: \(messages[idx].content.prefix(80))")
     }
 
     private func updateResponse(responseId: UUID, content: String) {
