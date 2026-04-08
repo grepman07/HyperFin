@@ -2,13 +2,7 @@ import Foundation
 
 public enum HFConstants {
     public enum API {
-        #if DEBUG
-        // Use Mac's local IP so physical devices can reach the dev server.
-        // Change this to your Mac's current IP (run: ipconfig getifaddr en0).
-        public static let baseURL = "http://192.168.7.21:3000"
-        #else
         public static let baseURL = "https://hyperfin-server-dzlsx.ondigitalocean.app"
-        #endif
         public static let apiVersion = "v1"
         public static let timeoutInterval: TimeInterval = 30
     }
@@ -28,6 +22,8 @@ public enum HFConstants {
         public static let minAvailableMemoryMB = 512
         public static let receiptParsingMaxTokens = 256
         public static let receiptParsingTemperature: Float = 0.1
+        public static let classificationMaxTokens = 100
+        public static let classificationTemperature: Float = 0.1
     }
 
     public enum Budget {

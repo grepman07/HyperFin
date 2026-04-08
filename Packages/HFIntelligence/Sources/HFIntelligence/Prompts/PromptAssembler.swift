@@ -43,6 +43,38 @@ public struct PromptAssembler: Sendable {
         """
     }
 
+    // MARK: - Intent Classification Prompt
+
+    public func assembleClassificationPrompt(
+        query: String,
+        slots: ConversationSlot
+    ) -> String {
+        var slotContext = ""
+        if let cat = slots.lastCategory {
+            slotContext += "\nPrevious topic: \(cat)."
+        }
+        if let merchant = slots.lastMerchant {
+            slotContext += "\nPrevious merchant: \(merchant)."
+        }
+        if slots.pendingClarification, let intent = slots.lastIntent {
+            slotContext += "\nUser is answering a clarification about: \(intent)."
+        }
+
+        return """
+        <|im_start|>system
+        Classify the user's finance question. Reply ONLY with JSON, no other text.
+        Intents: spending, budget, balance, trend, anomaly, transaction_search, advice, greeting
+        Categories: Food & Dining, Transportation, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Travel, Groceries, Subscriptions
+        Periods: today, this_week, this_month, last_month, last_30_days, last_N_months
+        If the query is unclear, set needs_clarification to true and write a short question.
+        If the user refers to a previous topic, inherit it.\(slotContext)<|im_end|>
+        <|im_start|>user
+        \(query)<|im_end|>
+        <|im_start|>assistant
+        {
+        """
+    }
+
     // MARK: - System Prompt
 
     private func systemPrompt(tone: ChatTone) -> String {

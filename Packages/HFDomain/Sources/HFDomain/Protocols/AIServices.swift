@@ -361,3 +361,106 @@ public struct PassthroughResult: ToolResult, Sendable {
         message
     }
 }
+
+// MARK: - LLM Intent Classification
+
+/// Structured output from the LLM intent classifier
+public struct ClassificationResult: Codable, Sendable {
+    public let intent: String
+    public let category: String?
+    public let merchant: String?
+    public let period: String?
+    public let needsClarification: Bool
+    public let clarification: String?
+
+    enum CodingKeys: String, CodingKey {
+        case intent, category, merchant, period
+        case needsClarification = "needs_clarification"
+        case clarification
+    }
+
+    public init(
+        intent: String,
+        category: String?,
+        merchant: String?,
+        period: String?,
+        needsClarification: Bool,
+        clarification: String?
+    ) {
+        self.intent = intent
+        self.category = category
+        self.merchant = merchant
+        self.period = period
+        self.needsClarification = needsClarification
+        self.clarification = clarification
+    }
+}
+
+/// Multi-turn conversation context — tracks slots across messages
+public struct ConversationSlot: Sendable {
+    public var lastIntent: String?
+    public var lastCategory: String?
+    public var lastMerchant: String?
+    public var lastPeriod: DatePeriod?
+    public var pendingClarification: Bool = false
+
+    public init() {}
+
+    public mutating func update(from classification: ClassificationResult) {
+        if let cat = classification.category { lastCategory = cat }
+        if let merchant = classification.merchant { lastMerchant = merchant }
+        if let period = classification.period { lastPeriod = ConversationSlot.resolvePeriod(period) }
+        lastIntent = classification.intent
+        pendingClarification = classification.needsClarification
+    }
+
+    public mutating func updateFromRegex(_ intent: ChatIntent) {
+        switch intent {
+        case .spendingQuery(let cat, let merchant, let period):
+            if let cat { lastCategory = cat }
+            if let merchant { lastMerchant = merchant }
+            lastPeriod = period
+            lastIntent = "spending"
+        case .trendQuery(let cat, _):
+            if let cat { lastCategory = cat }
+            lastIntent = "trend"
+        case .budgetStatus(let cat):
+            if let cat { lastCategory = cat }
+            lastIntent = "budget"
+        case .anomalyCheck(let cat, let period):
+            if let cat { lastCategory = cat }
+            lastPeriod = period
+            lastIntent = "anomaly"
+        case .greeting:
+            clear()
+        default: break
+        }
+        pendingClarification = false
+    }
+
+    public mutating func clear() {
+        lastIntent = nil
+        lastCategory = nil
+        lastMerchant = nil
+        lastPeriod = nil
+        pendingClarification = false
+    }
+
+    private static func resolvePeriod(_ raw: String) -> DatePeriod {
+        switch raw {
+        case "today": return .today
+        case "this_week": return .thisWeek
+        case "this_month": return .thisMonth
+        case "last_month": return .lastMonth
+        case "last_30_days": return .last30Days
+        case "last_90_days": return .last90Days
+        default:
+            // Handle "last_N_months" pattern
+            if raw.hasPrefix("last_"), raw.hasSuffix("_months") {
+                let middle = raw.dropFirst(5).dropLast(7)
+                if let n = Int(middle) { return .lastNMonths(n) }
+            }
+            return .thisMonth
+        }
+    }
+}

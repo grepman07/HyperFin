@@ -11,15 +11,17 @@ public struct IntentParser: Sendable {
             return .greeting
         }
 
-        if let intent = parseTrendQuery(lowered) {
-            return intent
-        }
-
         if let intent = parseAnomalyQuery(lowered) {
             return intent
         }
 
+        // Spending BEFORE trend — "food spending in the last 2 months" is a spending query
         if let intent = parseSpendingQuery(lowered, raw: query) {
+            return intent
+        }
+
+        // Trend requires explicit keywords: "trend", "changed", "evolved"
+        if let intent = parseTrendQuery(lowered) {
             return intent
         }
 
@@ -50,11 +52,11 @@ public struct IntentParser: Sendable {
     // MARK: - Trend Query
 
     private func parseTrendQuery(_ text: String) -> ChatIntent? {
+        // Only match when user explicitly asks for a "trend" or "how has X changed"
         let patterns = [
             #"(?:spending )?trend(?:s)?(?: for| on| of)?\s*(.+?)(?:\s+(?:over|for|in)\s+(?:the\s+)?(?:last\s+)?(\d+)\s+months?)?"#,
             #"how (?:has|have) (?:my )?(.+?) (?:spending )?(?:changed|trended|evolved)"#,
-            #"(.+?) spending (?:over|for|in) (?:the )?(?:last )?(\d+) months?"#,
-            #"show (?:me )?(?:my )?(.+?) (?:spending )?(?:over|for) (?:the )?(?:last )?(\d+) months?"#,
+            #"show (?:me )?(?:my )?(.+?) (?:spending )?trend"#,
         ]
 
         for pattern in patterns {
@@ -97,6 +99,7 @@ public struct IntentParser: Sendable {
         let spendingPatterns = [
             #"how much (?:did i|have i|i) (?:spend|spent) (?:on|at|for) (.+?)(?:\s+(?:this|last|in|over)\s+(.+))?$"#,
             #"(?:total|sum|amount) (?:spent|spending|expenses?|costs?) (?:on|at|for|in) (.+?)(?:\s+(?:this|last|in|over)\s+(.+))?$"#,
+            #"(?:what(?:'s| is) (?:my )?|show (?:me )?(?:my )?)(.+?) (?:spending|expenses?|costs?)(?: (?:this|last|in|over|for)\s+(.+))?$"#,
             #"(?:total|all|my) (.+?) (?:spending|expenses?|costs?)(?: (?:this|last|in|over|for)\s+(.+))?$"#,
             #"(.+?) (?:spending|expenses?|costs?)(?: (?:this|last|in|over|for)\s+(.+))?$"#,
             #"what (?:did i|have i) (?:spend|spent) (?:on|at) (.+)"#,
@@ -105,7 +108,8 @@ public struct IntentParser: Sendable {
 
         for pattern in spendingPatterns {
             if let match = text.firstMatch(of: try! Regex(pattern)) {
-                let subject = match.output.count > 1 ? String(match.output[1].substring ?? "") : nil
+                let rawSubject = match.output.count > 1 ? String(match.output[1].substring ?? "") : nil
+                let subject = cleanSubject(rawSubject)
                 let periodStr = match.output.count > 2 ? match.output[2].substring.map(String.init) : nil
                 let period = parsePeriod(periodStr) ?? .thisMonth
 
@@ -175,7 +179,7 @@ public struct IntentParser: Sendable {
     // MARK: - Advice Query
 
     private func parseAdviceQuery(_ text: String) -> ChatIntent? {
-        let adviceKeywords = ["how can i save", "tips for", "advice on", "help me with", "suggest", "recommend", "should i"]
+        let adviceKeywords = ["how can i save", "where can i save", "areas to save", "ways to save", "tips for", "advice on", "help me with", "suggest", "recommend", "should i", "how to save", "save money", "reduce spending", "cut costs"]
         for keyword in adviceKeywords {
             if text.contains(keyword) {
                 return .generalAdvice(topic: text)
@@ -209,6 +213,21 @@ public struct IntentParser: Sendable {
         if text.contains("3 months") { return .last90Days }
 
         return nil
+    }
+
+    // MARK: - Subject Cleaning
+
+    /// Strip common prefixes like "what is my", "my", "the" so "what is my food" → "food"
+    private func cleanSubject(_ subject: String?) -> String? {
+        guard var text = subject?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return nil }
+        let prefixes = ["what is my ", "what's my ", "show me my ", "show my ", "my ", "the "]
+        for prefix in prefixes {
+            if text.hasPrefix(prefix) {
+                text = String(text.dropFirst(prefix.count))
+                break
+            }
+        }
+        return text.isEmpty ? nil : text
     }
 
     // MARK: - Subject Classification
