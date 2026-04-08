@@ -81,13 +81,14 @@ public actor ModelManager {
 
         #if canImport(MLXLLM) && !targetEnvironment(simulator)
         status = .downloading(progress: 0)
-        HFLogger.ai.info("Loading model: \(modelId)")
+        let currentModelId = self.modelId
+        HFLogger.ai.info("Loading model: \(currentModelId)")
 
         do {
             // Set GPU cache limit for memory management
             MLX.GPU.set(cacheLimit: 512 * 1024 * 1024)
 
-            let configuration = ModelConfiguration(id: modelId)
+            let configuration = ModelConfiguration(id: currentModelId)
 
             let container = try await LLMModelFactory.shared.loadContainer(
                 configuration: configuration
@@ -99,7 +100,7 @@ public actor ModelManager {
 
             self.modelContainer = container
             status = .loaded
-            HFLogger.ai.info("Model loaded successfully: \(modelId)")
+            HFLogger.ai.info("Model loaded successfully: \(currentModelId)")
         } catch {
             let msg = error.localizedDescription
             status = .error(msg)

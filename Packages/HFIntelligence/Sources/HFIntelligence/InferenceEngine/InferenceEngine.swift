@@ -11,18 +11,15 @@ public struct InferenceRequest: Sendable {
     public let prompt: String
     public let maxTokens: Int
     public let temperature: Float
-    public let stopSequences: [String]
 
     public init(
         prompt: String,
         maxTokens: Int = HFConstants.AI.maxGenerationTokens,
-        temperature: Float = HFConstants.AI.temperature,
-        stopSequences: [String] = []
+        temperature: Float = HFConstants.AI.temperature
     ) {
         self.prompt = prompt
         self.maxTokens = maxTokens
         self.temperature = temperature
-        self.stopSequences = stopSequences
     }
 }
 
@@ -72,42 +69,39 @@ public actor InferenceEngine {
 
         HFLogger.ai.debug("Starting MLX inference (\(request.maxTokens) max tokens)")
 
-        let _ = try await container.perform { context in
-            let input = try await context.processor.prepare(
-                input: .init(prompt: request.prompt)
-            )
+        // Prepare input using container's thread-safe convenience method
+        let lmInput = try await container.prepare(input: UserInput(prompt: request.prompt))
 
-            let parameters = GenerateParameters(
-                temperature: request.temperature
-            )
+        // Stream generation
+        let parameters = GenerateParameters(temperature: request.temperature)
+        let stream = try await container.generate(input: lmInput, parameters: parameters)
 
-            var tokenCount = 0
-            let result = try MLXLMCommon.generate(
-                input: input,
-                parameters: parameters,
-                context: context
-            ) { tokens in
-                tokenCount = tokens.count
-                if tokenCount >= request.maxTokens {
-                    return .stop
-                }
+        var tokenCount = 0
+        var fullText = ""
+        for await generation in stream {
+            switch generation {
+            case .chunk(let text):
+                tokenCount += 1
+                if tokenCount > request.maxTokens { break }
+                fullText += text
+                continuation.yield(fullText)
 
-                let text = context.tokenizer.decode(tokens: tokens)
-                continuation.yield(text)
-                return .more
+            case .info(let info):
+                HFLogger.ai.debug("Inference complete: \(info.promptTokenCount) prompt tokens, \(String(format: "%.1f", info.tokensPerSecond)) tok/s")
+
+            default:
+                break
             }
-
-            HFLogger.ai.debug("Inference complete: \(tokenCount) tokens, \(result.tokensPerSecond) tok/s")
-            continuation.finish()
-            return result
         }
+
+        continuation.finish()
     }
     #endif
 
     public func generateComplete(_ request: InferenceRequest) async throws -> String {
         var result = ""
         for try await token in generate(request) {
-            result = token // MLXLMCommon yields cumulative text
+            result = token
         }
         return result
     }
