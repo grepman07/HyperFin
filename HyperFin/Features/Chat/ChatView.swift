@@ -48,6 +48,12 @@ struct ChatView: View {
                 viewModel.modelContainer = modelContext.container
                 viewModel.chatEngine = dependencies.chatEngine
             }
+            .task {
+                // Auto-load model if not already loaded
+                if await dependencies.modelManager.currentStatus != .loaded {
+                    try? await dependencies.modelManager.loadModel()
+                }
+            }
         }
     }
 

@@ -146,6 +146,9 @@ public struct IntentParser: Sendable {
         let patterns = [
             #"(?:what(?:'s| is) my|show|check|how much (?:do i have|is) in) (?:(?:(.+?) )?balance|(?:(.+?) )?account)"#,
             #"(?:total )?balance"#,
+            #"net worth"#,
+            #"how much (?:do i have|money do i have|do i own)"#,
+            #"(?:all |total |my )?(?:accounts?|balances?)(?: overview| summary)?"#,
         ]
 
         for pattern in patterns {
