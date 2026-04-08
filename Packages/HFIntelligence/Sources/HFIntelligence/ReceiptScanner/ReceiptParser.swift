@@ -8,22 +8,11 @@ public actor ReceiptParser {
         self.inferenceEngine = inferenceEngine
     }
 
-    /// Parses OCR text lines into a structured ParsedReceipt using the on-device Gemma model.
+    /// Parses OCR text lines into a structured ParsedReceipt using the on-device model.
     public func parse(ocrLines: [String]) async throws -> ParsedReceipt {
         let ocrText = ocrLines.joined(separator: "\n")
-
-        let prompt = """
-        <start_of_turn>system
-        You are a receipt parser. Extract merchant name, total amount, and date from the receipt text below.
-        Respond ONLY with a JSON object. No explanation, no markdown.
-        Format: {"merchant":"...","total":12.34,"date":"YYYY-MM-DD"}
-        If you cannot determine a field, use null.
-        <end_of_turn>
-        <start_of_turn>user
-        \(ocrText)
-        <end_of_turn>
-        <start_of_turn>model
-        """
+        let assembler = PromptAssembler()
+        let prompt = assembler.assembleReceiptPrompt(ocrText: ocrText)
 
         let request = InferenceRequest(
             prompt: prompt,

@@ -20,10 +20,11 @@ public enum HFConstants {
     }
 
     public enum AI {
-        public static let modelName = "gemma-3-1b-it-4bit"
+        public static let modelName = "Qwen3.5-0.8B-MLX-4bit"
+        public static let modelHuggingFaceId = "mlx-community/Qwen3.5-0.8B-MLX-4bit"
         public static let modelDirectory = "Models"
         public static let maxGenerationTokens = 512
-        public static let temperature: Float = 0.7
+        public static let temperature: Float = 0.6
         public static let minAvailableMemoryMB = 512
         public static let receiptParsingMaxTokens = 256
         public static let receiptParsingTemperature: Float = 0.1

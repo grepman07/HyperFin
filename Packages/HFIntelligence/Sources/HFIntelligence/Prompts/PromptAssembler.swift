@@ -5,106 +5,67 @@ import HFShared
 public struct PromptAssembler: Sendable {
     public init() {}
 
-    public func assemble(
+    // MARK: - Agentic Pattern: Tool Result → Response Generation
+
+    public func assembleFromToolResult(
         userQuery: String,
-        intent: ChatIntent,
-        financialContext: FinancialContext,
+        toolResult: any ToolResult,
         conversationHistory: [ChatMessage],
         tone: ChatTone = .professional
     ) -> String {
         var prompt = systemPrompt(tone: tone)
-        prompt += "\n\n"
 
-        let contextSection = buildContextSection(intent: intent, context: financialContext)
-        if !contextSection.isEmpty {
-            prompt += "<financial_context>\n\(contextSection)\n</financial_context>\n\n"
+        // Conversation history (limit to 2 for memory efficiency with 0.8B model)
+        for message in conversationHistory.suffix(2) {
+            let role = message.role == .user ? "user" : "assistant"
+            prompt += "<|im_start|>\(role)\n\(message.content)<|im_end|>\n"
         }
 
-        for message in conversationHistory.suffix(6) {
-            let role = message.role == .user ? "user" : "model"
-            prompt += "<start_of_turn>\(role)\n\(message.content)<end_of_turn>\n"
-        }
-
-        prompt += "<start_of_turn>user\n\(userQuery)<end_of_turn>\n"
-        prompt += "<start_of_turn>model\n"
+        // User query with data embedded naturally — no internal jargon
+        prompt += "<|im_start|>user\n\(userQuery)\n\nHere is the data:\n\(toolResult.toJSON())<|im_end|>\n"
+        prompt += "<|im_start|>assistant\n"
 
         return prompt
     }
 
-    private func systemPrompt(tone: ChatTone) -> String {
-        let toneInstruction: String = switch tone {
-        case .professional:
-            "Respond in a professional, clear, and businesslike tone."
-        case .friendly:
-            "Respond in a warm, friendly, and encouraging tone. Use casual language."
-        case .funny:
-            "Respond in a witty, humorous tone. Add light jokes or playful comments about spending habits, but keep the financial data accurate."
-        case .strict:
-            "Respond in a strict, no-nonsense tone. Be direct and hold the user accountable for overspending. Don't sugarcoat bad habits."
-        }
+    // MARK: - Receipt Parsing Prompt
 
-        return """
-        <start_of_turn>system
-        You are HyperFin, an AI finance coach. You help users \
-        understand their spending, manage budgets, and make better financial decisions.
-
-        Tone: \(toneInstruction)
-
-        Guidelines:
-        - Be concise and direct. Lead with the answer.
-        - Use exact dollar amounts when you have financial data.
-        - Never give specific investment advice or recommendations to buy/sell securities.
-        - If asked about something outside your data, say so clearly.
-        - Format currency as $X,XXX.XX.
-        - When discussing budget status, mention the percentage used.
-        - You run entirely on-device. The user's financial data never leaves their iPhone.
-        <end_of_turn>
+    public func assembleReceiptPrompt(ocrText: String) -> String {
+        """
+        <|im_start|>system
+        You are a receipt parser. Extract merchant name, total amount, and date from the receipt text below.
+        Respond ONLY with a JSON object. No explanation, no markdown.
+        Format: {"merchant":"...","total":12.34,"date":"YYYY-MM-DD"}
+        If you cannot determine a field, use null.<|im_end|>
+        <|im_start|>user
+        \(ocrText)<|im_end|>
+        <|im_start|>assistant
         """
     }
 
-    private func buildContextSection(intent: ChatIntent, context: FinancialContext) -> String {
-        var sections: [String] = []
+    // MARK: - System Prompt
 
-        if let total = context.totalSpending {
-            sections.append("Total spending: \(total.currencyFormatted)")
-            sections.append("Transaction count: \(context.relevantTransactions.count)")
-
-            let topMerchants = merchantSummary(context.relevantTransactions)
-            if !topMerchants.isEmpty {
-                sections.append("Top merchants: \(topMerchants)")
-            }
+    private func systemPrompt(tone: ChatTone) -> String {
+        let toneInstruction: String = switch tone {
+        case .professional:
+            "Be professional and clear."
+        case .friendly:
+            "Be warm and friendly. Use casual language."
+        case .funny:
+            "Be witty and humorous. Add light jokes about spending, but keep numbers accurate."
+        case .strict:
+            "Be strict and direct. Hold the user accountable for overspending."
         }
 
-        if let budget = context.currentBudget {
-            sections.append("Budget month: \(budget.month)")
-            sections.append("Total allocated: \(budget.totalAllocated.currencyFormatted)")
-            sections.append("Total spent: \(budget.totalSpent.currencyFormatted)")
-            for line in budget.lines.prefix(10) {
-                let catName = context.categories.first { $0.id == line.categoryId }?.name ?? "Unknown"
-                let pct = Int(line.percentUsed * 100)
-                sections.append("  \(catName): \(line.spentAmount.currencyFormatted) / \(line.allocatedAmount.currencyFormatted) (\(pct)%)")
-            }
-        }
+        return """
+        <|im_start|>system
+        You are HyperFin, a personal finance coach.
+        The user asks a question and you receive pre-computed data.
+        Reply using ONLY the numbers given. Never make up numbers.
+        \(toneInstruction)
+        Keep responses short (2-4 sentences). Format money as $X,XXX.XX.
+        Never mention data formats, tools, or system internals.<|im_end|>
 
-        if let totalBalance = context.totalBalance {
-            sections.append("Total balance across accounts: \(totalBalance.currencyFormatted)")
-            for account in context.accounts {
-                sections.append("  \(account.accountName) (\(account.institutionName)): \(account.currentBalance.currencyFormatted)")
-            }
-        }
-
-        return sections.joined(separator: "\n")
-    }
-
-    private func merchantSummary(_ transactions: [Transaction]) -> String {
-        var totals: [String: Decimal] = [:]
-        for txn in transactions where txn.isExpense {
-            let name = txn.merchantName ?? "Unknown"
-            totals[name, default: 0] += txn.amount
-        }
-        return totals.sorted { $0.value > $1.value }
-            .prefix(5)
-            .map { "\($0.key): \($0.value.currencyFormatted)" }
-            .joined(separator: ", ")
+        """
     }
 }

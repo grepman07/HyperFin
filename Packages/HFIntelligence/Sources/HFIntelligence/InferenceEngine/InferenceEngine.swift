@@ -23,16 +23,38 @@ public struct InferenceRequest: Sendable {
     }
 }
 
+// MARK: - Model Token Config
+
+public struct ModelTokenConfig: Sendable {
+    public let stopTokens: [String]
+    public let stripTokens: [String]
+
+    public static let qwen = ModelTokenConfig(
+        stopTokens: ["<|im_end|>", "<|endoftext|>"],
+        stripTokens: ["<|im_start|>", "<|im_end|>", "<|endoftext|>"]
+    )
+
+    public static let gemma = ModelTokenConfig(
+        stopTokens: ["<end_of_turn>", "<eos>"],
+        stripTokens: ["<start_of_turn>", "<end_of_turn>", "<eos>"]
+    )
+}
+
+// MARK: - Inference Engine
+
 public actor InferenceEngine {
     private let modelManager: ModelManager
+    private let tokenConfig: ModelTokenConfig
 
-    public init(modelManager: ModelManager) {
+    public init(modelManager: ModelManager, tokenConfig: ModelTokenConfig = .qwen) {
         self.modelManager = modelManager
+        self.tokenConfig = tokenConfig
     }
 
     public func generate(_ request: InferenceRequest) -> AsyncThrowingStream<String, Error> {
         #if canImport(MLXLLM) && !targetEnvironment(simulator)
         let manager = self.modelManager
+        let config = self.tokenConfig
         return AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -67,11 +89,12 @@ public actor InferenceEngine {
                             tokenCount += 1
                             if tokenCount > request.maxTokens { break }
 
-                            // Stop on Gemma end-of-turn tokens
-                            if text.contains("<end_of_turn>") || text.contains("<eos>") {
-                                let cleaned = text
-                                    .replacingOccurrences(of: "<end_of_turn>", with: "")
-                                    .replacingOccurrences(of: "<eos>", with: "")
+                            // Check for stop tokens
+                            if config.stopTokens.contains(where: { text.contains($0) }) {
+                                var cleaned = text
+                                for token in config.stripTokens {
+                                    cleaned = cleaned.replacingOccurrences(of: token, with: "")
+                                }
                                 if !cleaned.isEmpty {
                                     fullText += cleaned
                                 }
@@ -79,10 +102,11 @@ public actor InferenceEngine {
                                 break
                             }
 
-                            // Strip any other control tokens
-                            let cleanText = text
-                                .replacingOccurrences(of: "<start_of_turn>", with: "")
-                                .replacingOccurrences(of: "<end_of_turn>", with: "")
+                            // Strip control tokens from output
+                            var cleanText = text
+                            for token in config.stripTokens {
+                                cleanText = cleanText.replacingOccurrences(of: token, with: "")
+                            }
                             fullText += cleanText
                             continuation.yield(fullText)
 

@@ -1,0 +1,21 @@
+name: hyperfin-server
+services:
+  - name: api
+    github:
+      repo: grepman07/HyperFin
+      branch: main
+      deploy_on_push: true
+    source_dir: Server
+    dockerfile_path: Server/Dockerfile
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    health_check:
+      http_path: /health
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: ALLOWED_ORIGINS
+        value: "*"

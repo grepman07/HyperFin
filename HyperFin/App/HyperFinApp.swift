@@ -16,7 +16,7 @@ struct HyperFinApp: App {
             RootView(dependencies: dependencies)
                 .onAppear {
                     Task {
-                        await NotificationManager.shared.requestPermission()
+                        let _ = await NotificationManager.shared.requestPermission()
                         await NotificationManager.shared.scheduleWeeklySummary(container: dependencies.modelContainer)
                         await NotificationManager.shared.checkBudgetAlerts(container: dependencies.modelContainer)
                     }

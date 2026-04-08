@@ -65,7 +65,7 @@ public actor ModelManager {
 
     private let modelId: String
 
-    public init(modelId: String = "mlx-community/gemma-3-1b-it-4bit") {
+    public init(modelId: String = HFConstants.AI.modelHuggingFaceId) {
         self.modelId = modelId
     }
 
@@ -96,41 +96,60 @@ public actor ModelManager {
         let currentModelId = self.modelId
         HFLogger.ai.info("Loading model: \(currentModelId)")
 
-        do {
-            // Reduce GPU cache to leave more memory for model weights
-            MLX.GPU.set(cacheLimit: 256 * 1024 * 1024)
+        // Reduce GPU cache to leave more memory for model weights
+        Memory.cacheLimit = 256 * 1024 * 1024
 
-            let configuration = ModelConfiguration(id: currentModelId)
+        let configuration = ModelConfiguration(id: currentModelId)
 
-            // Use a lock-based tracker so the progress callback doesn't need actor access
-            let tracker = ProgressTracker()
+        // Retry up to 3 times for download failures
+        let maxRetries = 3
+        var lastError: Error?
 
-            // Poll progress in a separate task since the callback can't await actor methods
-            let pollTask = Task { [weak self] in
-                while !Task.isCancelled {
-                    let frac = tracker.fraction
-                    await self?.updateProgress(frac)
-                    try await Task.sleep(for: .milliseconds(250))
+        for attempt in 1...maxRetries {
+            do {
+                HFLogger.ai.info("Download attempt \(attempt)/\(maxRetries) for \(currentModelId)")
+
+                // Use a lock-based tracker so the progress callback doesn't need actor access
+                let tracker = ProgressTracker()
+
+                // Poll progress in a separate task since the callback can't await actor methods
+                let pollTask = Task { [weak self] in
+                    while !Task.isCancelled {
+                        let frac = tracker.fraction
+                        await self?.updateProgress(frac)
+                        try? await Task.sleep(for: .milliseconds(250))
+                    }
+                }
+
+                let container = try await LLMModelFactory.shared.loadContainer(
+                    configuration: configuration
+                ) { progress in
+                    tracker.update(progress.fractionCompleted)
+                }
+
+                pollTask.cancel()
+
+                self.modelContainer = container
+                status = .loaded
+                HFLogger.ai.info("Model loaded successfully: \(currentModelId)")
+                return  // Success — exit the function
+            } catch {
+                lastError = error
+                HFLogger.ai.error("Attempt \(attempt) failed: \(error.localizedDescription)")
+
+                if attempt < maxRetries {
+                    status = .downloading(progress: 0)
+                    // Wait before retrying (2s, 4s)
+                    try? await Task.sleep(for: .seconds(2 * attempt))
                 }
             }
-
-            let container = try await LLMModelFactory.shared.loadContainer(
-                configuration: configuration
-            ) { progress in
-                tracker.update(progress.fractionCompleted)
-            }
-
-            pollTask.cancel()
-
-            self.modelContainer = container
-            status = .loaded
-            HFLogger.ai.info("Model loaded successfully: \(currentModelId)")
-        } catch {
-            let msg = error.localizedDescription
-            status = .error(msg)
-            HFLogger.ai.error("Model load failed: \(msg)")
-            throw ModelError.modelLoadFailed(msg)
         }
+
+        // All retries exhausted
+        let msg = lastError?.localizedDescription ?? "Unknown download error"
+        status = .error(msg)
+        HFLogger.ai.error("Model download failed after \(maxRetries) attempts: \(msg)")
+        throw ModelError.downloadFailed(msg)
         #else
         status = .notSupported
         throw ModelError.notSupported

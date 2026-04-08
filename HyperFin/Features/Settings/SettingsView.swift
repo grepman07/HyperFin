@@ -67,7 +67,7 @@ struct SettingsView: View {
                         HStack {
                             Label("On-Device AI", systemImage: "brain")
                             Spacer()
-                            Text(ModelManager.isMLXSupported ? "Gemma 3 1B" : "Simulator")
+                            Text(ModelManager.isMLXSupported ? "Qwen 3.5 0.8B" : "Simulator")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

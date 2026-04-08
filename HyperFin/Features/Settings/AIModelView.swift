@@ -14,7 +14,7 @@ struct AIModelView: View {
                 HStack {
                     Label("Model", systemImage: "brain")
                     Spacer()
-                    Text("Gemma 3 1B (4-bit)")
+                    Text("Qwen 3.5 0.8B (4-bit)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -59,7 +59,7 @@ struct AIModelView: View {
                             if isLoading {
                                 ProgressView()
                             } else {
-                                Text("~733 MB")
+                                Text("~625 MB")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }

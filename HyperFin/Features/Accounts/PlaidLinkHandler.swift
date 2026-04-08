@@ -168,7 +168,7 @@ final class PlaidLinkHandler {
             }
 
             // Save transactions
-            let categories = try context.fetch(FetchDescriptor<SDCategory>())
+            let _ = try context.fetch(FetchDescriptor<SDCategory>())
             let categoryEngine = CategorizationRuleEngine()
 
             var transactionCount = 0
