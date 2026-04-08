@@ -72,7 +72,8 @@ final class ChatViewModel {
         let userQuery = messages.prefix(idx).last(where: { $0.isUser })?.content ?? ""
 
         let ratingStr = rating == .positive ? "positive" : "negative"
-        HFLogger.ai.info("Feedback: \(ratingStr) | query: \(userQuery) | response: \(messages[idx].content.prefix(80))")
+        let responsePreview = String(self.messages[idx].content.prefix(80))
+        HFLogger.ai.info("Feedback: \(ratingStr) | query: \(userQuery) | response: \(responsePreview)")
     }
 
     private func updateResponse(responseId: UUID, content: String) {
