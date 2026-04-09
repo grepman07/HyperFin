@@ -19,3 +19,9 @@ services:
         value: "3000"
       - key: ALLOWED_ORIGINS
         value: "*"
+      # Required by /v1/chat/stream (cloud chat tier, opt-in only).
+      # The actual secret value must be set via the Digital Ocean dashboard
+      # or `doctl apps update` before the first deploy that references it.
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
