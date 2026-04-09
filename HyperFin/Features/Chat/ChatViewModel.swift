@@ -14,13 +14,17 @@ struct ChatMessageUI: Identifiable {
     let id: UUID
     let content: String
     let isUser: Bool
+    /// Static help / welcome bubbles that aren't AI responses. Feedback buttons
+    /// are suppressed for these since there's nothing to rate.
+    let isHelp: Bool
     var isStreaming: Bool
     var rating: FeedbackRating
 
-    init(id: UUID = UUID(), content: String, isUser: Bool, isStreaming: Bool = false, rating: FeedbackRating = .none) {
+    init(id: UUID = UUID(), content: String, isUser: Bool, isHelp: Bool = false, isStreaming: Bool = false, rating: FeedbackRating = .none) {
         self.id = id
         self.content = content
         self.isUser = isUser
+        self.isHelp = isHelp
         self.isStreaming = isStreaming
         self.rating = rating
     }
@@ -32,7 +36,8 @@ final class ChatViewModel {
     var messages: [ChatMessageUI] = [
         ChatMessageUI(
             content: "Hi! I'm HyperFin, your AI finance coach. I run entirely on your device — your financial data never leaves your iPhone.\n\nTry asking:\n- \"How much did I spend on food this month?\"\n- \"What's my balance?\"\n- \"Show my budget status\"\n- \"Spending trend for groceries\"\n- \"Any spending spikes?\"",
-            isUser: false
+            isUser: false,
+            isHelp: true
         )
     ]
     var inputText = ""
@@ -40,7 +45,22 @@ final class ChatViewModel {
 
     var modelContainer: ModelContainer?
     var chatEngine: ChatEngine?
+    var telemetryLogger: TelemetryLogger?
     var modelStatusText: String = ""
+
+    /// Stable chat session ID — survives across messages in the same chat
+    /// view so server-side analytics can stitch follow-ups together. Rotated
+    /// if you ever add a "start new chat" button.
+    private let sessionId = UUID()
+
+    /// Map ChatMessageUI.id → telemetry event id so `rateFeedback` knows which
+    /// row in the telemetry queue to update.
+    private var telemetryEventIds: [UUID: UUID] = [:]
+
+    /// Reused regex parser — the same one ChatEngine uses for routing. Reused
+    /// here ONLY to derive the intent/category/period strings we attach to
+    /// the telemetry event. Never mutates any state.
+    private let intentParser = IntentParser()
 
     func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -74,6 +94,16 @@ final class ChatViewModel {
         let ratingStr = rating == .positive ? "positive" : "negative"
         let responsePreview = String(self.messages[idx].content.prefix(80))
         HFLogger.ai.info("Feedback: \(ratingStr) | query: \(userQuery) | response: \(responsePreview)")
+
+        // Propagate to the telemetry queue so uploaders see the updated rating
+        if let logger = telemetryLogger, let eventId = telemetryEventIds[messageId] {
+            let telemetryRating: TelemetryFeedbackRating = switch rating {
+            case .positive: .positive
+            case .negative: .negative
+            case .none: .none
+            }
+            Task { await logger.updateFeedback(eventId: eventId, rating: telemetryRating) }
+        }
     }
 
     private func updateResponse(responseId: UUID, content: String) {
@@ -88,7 +118,6 @@ final class ChatViewModel {
     }
 
     private func streamFromEngine(engine: ChatEngine, text: String, responseId: UUID) async {
-        let sessionId = UUID()
         let recentDomain = messages.suffix(4).map { msg in
             ChatMessage(
                 role: msg.isUser ? .user : .assistant,
@@ -106,6 +135,8 @@ final class ChatViewModel {
         }
 
         let context = ChatContext(sessionId: sessionId, recentMessages: recentDomain, userProfile: userProfile)
+
+        let start = Date()
 
         do {
             for try await token in await engine.sendMessage(text, context: context) {
@@ -127,9 +158,82 @@ final class ChatViewModel {
                     isStreaming: false
                 )
             }
+
+            // Emit telemetry (no-op if user has not opted in)
+            await logTelemetry(
+                query: text,
+                responseId: responseId,
+                latencyMs: Int(Date().timeIntervalSince(start) * 1000)
+            )
         } catch {
             updateResponse(responseId: responseId, content: "Something went wrong. Please try again.")
             HFLogger.ai.error("Chat error: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Telemetry
+
+    private func logTelemetry(query: String, responseId: UUID, latencyMs: Int) async {
+        guard let logger = telemetryLogger else { return }
+        guard let idx = messages.firstIndex(where: { $0.id == responseId }) else { return }
+        let responseText = messages[idx].content
+
+        let intent = intentParser.parse(query)
+        let (intentStr, category, period) = telemetryFields(for: intent)
+
+        let eventId = await logger.log(
+            queryRaw: query,
+            responseRaw: responseText,
+            intent: intentStr,
+            category: category,
+            period: period,
+            latencyMs: latencyMs,
+            sessionId: sessionId
+        )
+        if let eventId {
+            telemetryEventIds[responseId] = eventId
+        }
+    }
+
+    /// Derive the flat (intent, category, period) tuple from a parsed
+    /// `ChatIntent`. Mirrors the classification labels the server expects.
+    private func telemetryFields(for intent: ChatIntent) -> (String, String?, String?) {
+        switch intent {
+        case .greeting:
+            return ("greeting", nil, nil)
+        case .spendingQuery(let category, let merchant, let period):
+            return ("spending", category ?? merchant, period.serverLabel)
+        case .budgetStatus(let category):
+            return ("budget", category, nil)
+        case .accountBalance:
+            return ("balance", nil, nil)
+        case .trendQuery(let category, _):
+            return ("trend", category, nil)
+        case .anomalyCheck(let category, let period):
+            return ("anomaly", category, period.serverLabel)
+        case .transactionSearch(let merchant, _, _):
+            return ("transaction_search", merchant, nil)
+        case .generalAdvice:
+            return ("advice", nil, nil)
+        case .unknown:
+            return ("unknown", nil, nil)
+        }
+    }
+}
+
+private extension DatePeriod {
+    /// Stable machine-readable label for the server analytics. Uses snake_case
+    /// so it matches the values the classification prompt emits.
+    var serverLabel: String {
+        switch self {
+        case .today: return "today"
+        case .thisWeek: return "this_week"
+        case .thisMonth: return "this_month"
+        case .lastMonth: return "last_month"
+        case .last30Days: return "last_30_days"
+        case .last90Days: return "last_90_days"
+        case .lastNMonths(let n): return "last_\(n)_months"
+        case .custom: return "custom"
         }
     }
 }

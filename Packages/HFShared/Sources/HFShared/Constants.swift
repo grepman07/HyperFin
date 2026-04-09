@@ -43,4 +43,15 @@ public enum HFConstants {
         public static let appGroup = "group.com.hyperfin.app"
         public static let minimumIOSVersion = "17.0"
     }
+
+    public enum Telemetry {
+        /// Max events per upload batch.
+        public static let batchSize = 50
+        /// Minimum seconds between flush attempts (rate limiter).
+        public static let minFlushGapSeconds: TimeInterval = 30
+        /// After this many failed attempts, the event is dropped from the local queue.
+        public static let maxAttempts = 5
+        /// A foreground resume counts as "idle" and triggers a flush only after this idle gap.
+        public static let foregroundIdleFlushSeconds: TimeInterval = 300
+    }
 }

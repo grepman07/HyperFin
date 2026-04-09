@@ -6,6 +6,7 @@ import { authRouter } from './routes/auth';
 import { plaidRouter } from './routes/plaid';
 import { configRouter } from './routes/config';
 import { webhookRouter } from './routes/webhooks';
+import { telemetryRouter } from './routes/telemetry';
 
 dotenv.config();
 
@@ -27,6 +28,7 @@ app.use('/v1/auth', authRouter);
 app.use('/v1/plaid', plaidRouter);
 app.use('/v1/config', configRouter);
 app.use('/v1/plaid/webhooks', webhookRouter);
+app.use('/v1/telemetry', telemetryRouter);
 
 // Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

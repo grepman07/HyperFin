@@ -98,6 +98,18 @@ struct SettingsView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
+
+                    NavigationLink {
+                        PrivacySettingsView()
+                    } label: {
+                        HStack {
+                            Label("Data Sharing", systemImage: "hand.raised.fill")
+                            Spacer()
+                            Text(profiles.first?.telemetryOptIn == true ? "On" : "Off")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
 
                 Section {

@@ -14,6 +14,7 @@ public enum SwiftDataContainer {
             SDChatMessage.self,
             SDAlertConfig.self,
             SDUserProfile.self,
+            SDTelemetryEvent.self,
         ])
 
         let configuration = ModelConfiguration(

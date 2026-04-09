@@ -37,6 +37,7 @@
 		ECA81A54E093010556293B8F /* LinkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2D70D0EE1640DEA6F6FE73FF /* LinkKit */; };
 		F1A2B3C4D5E6F70891A2B3C4 /* ReceiptScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718A1B2C3D4 /* ReceiptScanView.swift */; };
 		F2A3B4C5D6E7F80912A3B4C5 /* ReceiptScanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6071829B2C3D4E5 /* ReceiptScanViewModel.swift */; };
+		C3D4E5F6A7B8091213C4D5E6 /* PrivacySettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E5F6A7B8C9102134D5E6F7 /* PrivacySettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -82,6 +83,7 @@
 		CE410946F2815EC7F85D4EEE /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		E401B7FE628E3A29FF091EAE /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		F8FC89250D6CBC92B50F55C3 /* PlaidLinkHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaidLinkHandler.swift; sourceTree = "<group>"; };
+		D4E5F6A7B8C9102134D5E6F7 /* PrivacySettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacySettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -226,6 +228,7 @@
 			isa = PBXGroup;
 			children = (
 				AD240AC5F41FB7548A6ACAAE /* AIModelView.swift */,
+				D4E5F6A7B8C9102134D5E6F7 /* PrivacySettingsView.swift */,
 				86261569AE7445E60380F497 /* SettingsView.swift */,
 			);
 			path = Settings;
@@ -400,6 +403,7 @@
 				3E026F17ADBC38E9B9E0E1A6 /* RootView.swift in Sources */,
 				B1BA92FC5309FC69DD10BA4E /* SampleDataSeeder.swift in Sources */,
 				7D15025765F496689849B5A2 /* SettingsView.swift in Sources */,
+				C3D4E5F6A7B8091213C4D5E6 /* PrivacySettingsView.swift in Sources */,
 				F1A2B3C4D5E6F70891A2B3C4 /* ReceiptScanView.swift in Sources */,
 				F2A3B4C5D6E7F80912A3B4C5 /* ReceiptScanViewModel.swift in Sources */,
 				6950242F8F39D900626A87C8 /* TransactionsView.swift in Sources */,

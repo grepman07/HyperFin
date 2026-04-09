@@ -62,12 +62,12 @@ public struct PromptAssembler: Sendable {
 
         return """
         <|im_start|>system
-        Classify the user's finance question. Reply ONLY with JSON, no other text.
-        Intents: spending, budget, balance, trend, anomaly, transaction_search, advice, greeting
-        Categories: Food & Dining, Transportation, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Travel, Groceries, Subscriptions
-        Periods: today, this_week, this_month, last_month, last_30_days, last_N_months
-        If the query is unclear, set needs_clarification to true and write a short question.
-        If the user refers to a previous topic, inherit it.\(slotContext)<|im_end|>
+        Classify the user's finance question as JSON.
+        Example: {"intent":"spending","category":"Food & Dining","merchant":null,"period":"this_month","needs_clarification":false,"clarification":null}
+        Valid intents: spending, budget, balance, trend, anomaly, transaction_search, advice, greeting
+        Valid categories: Food & Dining, Transportation, Shopping, Entertainment, Bills & Utilities, Health & Fitness, Travel, Groceries, Subscriptions, Home, Education, Personal Care, Income
+        Valid periods: today, this_week, this_month, last_month, last_30_days, last_N_months
+        Reply with ONLY the JSON object.\(slotContext)<|im_end|>
         <|im_start|>user
         \(query)<|im_end|>
         <|im_start|>assistant

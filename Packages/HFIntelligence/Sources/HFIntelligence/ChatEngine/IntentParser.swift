@@ -99,9 +99,10 @@ public struct IntentParser: Sendable {
         let spendingPatterns = [
             #"how much (?:did i|have i|i) (?:spend|spent) (?:on|at|for) (.+?)(?:\s+(?:this|last|in|over)\s+(.+))?$"#,
             #"(?:total|sum|amount) (?:spent|spending|expenses?|costs?) (?:on|at|for|in) (.+?)(?:\s+(?:this|last|in|over)\s+(.+))?$"#,
-            #"(?:what(?:'s| is) (?:my )?|show (?:me )?(?:my )?)(.+?) (?:spending|expenses?|costs?)(?: (?:this|last|in|over|for)\s+(.+))?$"#,
-            #"(?:total|all|my) (.+?) (?:spending|expenses?|costs?)(?: (?:this|last|in|over|for)\s+(.+))?$"#,
-            #"(.+?) (?:spending|expenses?|costs?)(?: (?:this|last|in|over|for)\s+(.+))?$"#,
+            #"(?:what(?:'s| is) (?:my )?|show (?:me )?(?:my )?)(?:spending|expenses?|costs?) (?:on|for|in) (.+?)(?:\s+(?:so far|to date|this|last|in|over|for)\s*(.*))?$"#,
+            #"(?:what(?:'s| is) (?:my )?|show (?:me )?(?:my )?)(.+?) (?:spending|expenses?|costs?)(?: (?:so far|to date|this|last|in|over|for)\s*(.*))?$"#,
+            #"(?:total|all|my) (.+?) (?:spending|expenses?|costs?)(?: (?:so far|to date|this|last|in|over|for)\s*(.*))?$"#,
+            #"(.+?) (?:spending|expenses?|costs?)(?: (?:so far|to date|this|last|in|over|for)\s*(.*))?$"#,
             #"what (?:did i|have i) (?:spend|spent) (?:on|at) (.+)"#,
             #"how much (?:on|for|in) (.+?)(?:\s+(?:this|last|in|over)\s+(.+))?$"#,
         ]
@@ -198,6 +199,7 @@ public struct IntentParser: Sendable {
         // Strip leading "the" for patterns like "the last 2 months"
         let text = raw.hasPrefix("the ") ? String(raw.dropFirst(4)) : raw
 
+        if text.isEmpty || text == "so far" || text == "to date" || text == "until now" { return .thisMonth }
         if text.contains("today") { return .today }
         if text.contains("this week") { return .thisWeek }
         if text.contains("this month") { return .thisMonth }
@@ -241,16 +243,19 @@ public struct IntentParser: Sendable {
         }
 
         let categoryNames = SpendingCategory.systemCategories.map { $0.name.lowercased() }
+        // Category synonyms — words that mean a WHOLE category, not a specific merchant
         let categoryKeywords: [String: String] = [
             "food": "Food & Dining", "dining": "Food & Dining", "restaurants": "Food & Dining",
-            "transport": "Transportation", "gas": "Transportation", "uber": "Transportation", "lyft": "Transportation",
-            "shopping": "Shopping", "clothes": "Shopping",
+            "transport": "Transportation", "transportation": "Transportation", "gas": "Transportation",
+            "shopping": "Shopping", "clothes": "Shopping", "clothing": "Shopping",
             "entertainment": "Entertainment", "movies": "Entertainment",
             "groceries": "Groceries", "grocery": "Groceries",
             "bills": "Bills & Utilities", "utilities": "Bills & Utilities",
-            "subscriptions": "Subscriptions",
-            "health": "Health & Fitness", "gym": "Health & Fitness",
+            "subscriptions": "Subscriptions", "subs": "Subscriptions",
+            "health": "Health & Fitness", "gym": "Health & Fitness", "fitness": "Health & Fitness",
             "travel": "Travel",
+            "home": "Home", "rent": "Home",
+            "education": "Education", "personal care": "Personal Care",
         ]
 
         let lowered = subject.lowercased()
@@ -261,6 +266,8 @@ public struct IntentParser: Sendable {
             return (mapped, nil)
         }
 
+        // Everything else (brand names like "Uber", "Starbucks", "Amazon") is treated as a merchant
+        // so SpendAggregator does a substring merchant search within the period.
         return (nil, subject)
     }
 }

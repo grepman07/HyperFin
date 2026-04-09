@@ -38,17 +38,10 @@ struct ChatView: View {
             }
             .navigationTitle("HyperFin")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        isInputFocused = false
-                    }
-                }
-            }
             .onAppear {
                 viewModel.modelContainer = modelContext.container
                 viewModel.chatEngine = dependencies.chatEngine
+                viewModel.telemetryLogger = dependencies.telemetryLogger
             }
             .task {
                 // Auto-load model if not already loaded
@@ -111,8 +104,9 @@ struct ChatBubbleView: View {
                         .scaleEffect(0.7)
                 }
 
-                // Feedback buttons for completed AI responses
-                if !message.isUser && !message.isStreaming && !message.content.isEmpty {
+                // Feedback buttons for completed AI responses only —
+                // not for static help/welcome bubbles.
+                if !message.isUser && !message.isStreaming && !message.content.isEmpty && !message.isHelp {
                     feedbackButtons
                 }
             }
