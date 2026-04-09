@@ -13,6 +13,16 @@ public actor ChatEngine {
     /// Multi-turn slot context — persists across messages
     private var conversationSlots = ConversationSlot()
 
+    /// The most recently resolved intent from either the regex fast-path or
+    /// the LLM classifier. Exposed via `lastResolvedIntent()` so the chat view
+    /// can tag telemetry events with the actual classified intent instead of
+    /// re-running regex locally (which would miss LLM-only matches).
+    private var _lastResolvedIntent: ChatIntent?
+
+    public func lastResolvedIntent() -> ChatIntent? {
+        _lastResolvedIntent
+    }
+
     private var transactionRepo: TransactionRepository?
     private var categoryRepo: CategoryRepository?
     private var accountRepo: AccountRepository?
@@ -60,6 +70,10 @@ public actor ChatEngine {
         AsyncThrowingStream { continuation in
             Task {
                 do {
+                    // Reset per-turn so the caller can't accidentally re-read
+                    // an intent from the previous turn while this one runs.
+                    self._lastResolvedIntent = nil
+
                     // Layer 1a: Regex fast-path
                     let regexIntent = self.intentParser.parse(text)
                     HFLogger.ai.info("Regex intent: \(String(describing: regexIntent))")
@@ -88,6 +102,8 @@ public actor ChatEngine {
                         resolvedIntent = regexIntent
                         self.conversationSlots.updateFromRegex(regexIntent)
                     }
+
+                    self._lastResolvedIntent = resolvedIntent
 
                     // Layer 2: Deterministic tool execution
                     guard let transactionRepo = self.transactionRepo,

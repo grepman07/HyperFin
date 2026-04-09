@@ -86,7 +86,7 @@ public actor TelemetryLogger {
             HFLogger.telemetry.debug("TelemetryLogger: logged event \(event.id.uuidString.prefix(8)) intent=\(intent)")
             return event.id
         } catch {
-            HFLogger.telemetry.error("TelemetryLogger: save failed: \(error.localizedDescription)")
+            HFLogger.telemetry.error("TelemetryLogger: save failed: \(String(describing: error))")
             return nil
         }
     }
@@ -104,7 +104,7 @@ public actor TelemetryLogger {
             try await repo.updateFeedback(eventId: eventId, feedback: value)
             HFLogger.telemetry.debug("TelemetryLogger: feedback \(rating.rawValue) for \(eventId.uuidString.prefix(8))")
         } catch {
-            HFLogger.telemetry.error("TelemetryLogger: updateFeedback failed: \(error.localizedDescription)")
+            HFLogger.telemetry.error("TelemetryLogger: updateFeedback failed: \(String(describing: error))")
         }
     }
 
@@ -129,7 +129,7 @@ public actor TelemetryLogger {
         do {
             batch = try await repo.fetchUnsent(limit: HFConstants.Telemetry.batchSize)
         } catch {
-            HFLogger.telemetry.error("TelemetryLogger: fetchUnsent failed: \(error.localizedDescription)")
+            HFLogger.telemetry.error("TelemetryLogger: fetchUnsent failed: \(String(describing: error))")
             return
         }
 
@@ -146,7 +146,7 @@ public actor TelemetryLogger {
             try await repo.markSent(ids: ids)
             HFLogger.telemetry.info("TelemetryLogger: flush succeeded (\(batch.count))")
         } catch {
-            HFLogger.telemetry.warning("TelemetryLogger: upload failed, incrementing attempts: \(error.localizedDescription)")
+            HFLogger.telemetry.warning("TelemetryLogger: upload failed, incrementing attempts: \(String(describing: error))")
             try? await repo.incrementAttempts(ids: ids)
         }
     }
@@ -160,13 +160,13 @@ public actor TelemetryLogger {
             try await repo.purgeAll()
             HFLogger.telemetry.info("TelemetryLogger: local queue purged")
         } catch {
-            HFLogger.telemetry.error("TelemetryLogger: purge failed: \(error.localizedDescription)")
+            HFLogger.telemetry.error("TelemetryLogger: purge failed: \(String(describing: error))")
         }
 
         do {
             try await uploader.deleteAll(installId: installId)
         } catch {
-            HFLogger.telemetry.warning("TelemetryLogger: server delete request failed (will retry on next opt-in cycle): \(error.localizedDescription)")
+            HFLogger.telemetry.warning("TelemetryLogger: server delete request failed (will retry on next opt-in cycle): \(String(describing: error))")
         }
     }
 }

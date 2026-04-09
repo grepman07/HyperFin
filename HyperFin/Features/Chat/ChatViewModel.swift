@@ -57,11 +57,6 @@ final class ChatViewModel {
     /// row in the telemetry queue to update.
     private var telemetryEventIds: [UUID: UUID] = [:]
 
-    /// Reused regex parser — the same one ChatEngine uses for routing. Reused
-    /// here ONLY to derive the intent/category/period strings we attach to
-    /// the telemetry event. Never mutates any state.
-    private let intentParser = IntentParser()
-
     func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -159,11 +154,17 @@ final class ChatViewModel {
                 )
             }
 
-            // Emit telemetry (no-op if user has not opted in)
+            // Emit telemetry (no-op if user has not opted in). We read the
+            // intent that ChatEngine actually resolved — which may have come
+            // from the LLM classifier when regex missed — so the telemetry
+            // event is tagged with the real intent rather than re-parsed
+            // "unknown".
+            let resolvedIntent = await engine.lastResolvedIntent()
             await logTelemetry(
                 query: text,
                 responseId: responseId,
-                latencyMs: Int(Date().timeIntervalSince(start) * 1000)
+                latencyMs: Int(Date().timeIntervalSince(start) * 1000),
+                resolvedIntent: resolvedIntent
             )
         } catch {
             updateResponse(responseId: responseId, content: "Something went wrong. Please try again.")
@@ -173,13 +174,17 @@ final class ChatViewModel {
 
     // MARK: - Telemetry
 
-    private func logTelemetry(query: String, responseId: UUID, latencyMs: Int) async {
+    private func logTelemetry(
+        query: String,
+        responseId: UUID,
+        latencyMs: Int,
+        resolvedIntent: ChatIntent?
+    ) async {
         guard let logger = telemetryLogger else { return }
         guard let idx = messages.firstIndex(where: { $0.id == responseId }) else { return }
         let responseText = messages[idx].content
 
-        let intent = intentParser.parse(query)
-        let (intentStr, category, period) = telemetryFields(for: intent)
+        let (intentStr, category, period) = telemetryFields(for: resolvedIntent ?? .unknown(rawQuery: query))
 
         let eventId = await logger.log(
             queryRaw: query,

@@ -15,6 +15,21 @@ public actor APIClient {
     private var accessToken: String?
     private var refreshToken: String?
 
+    /// Shared encoder — ISO 8601 dates so server-side Zod `z.string().datetime()`
+    /// validators accept timestamps. Default Swift encoding is a Double of
+    /// seconds-since-2001 which fails any `.datetime()` validator.
+    private let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }()
+
+    private let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
+
     public init(baseURL: String = HFConstants.API.baseURL) {
         self.baseURL = baseURL
         let config = URLSessionConfiguration.default
@@ -50,7 +65,7 @@ public actor APIClient {
         }
 
         if let body {
-            request.httpBody = try JSONEncoder().encode(body)
+            request.httpBody = try encoder.encode(body)
         }
 
         HFLogger.network.debug("\(method) \(path)")
@@ -76,7 +91,7 @@ public actor APIClient {
         }
 
         do {
-            return try JSONDecoder().decode(T.self, from: data)
+            return try decoder.decode(T.self, from: data)
         } catch {
             throw APIError.decodingError(error)
         }
