@@ -19,9 +19,39 @@ services:
         value: "3000"
       - key: ALLOWED_ORIGINS
         value: "*"
+      # PostgreSQL connection string — use DigitalOcean Managed PostgreSQL.
+      # Set via dashboard: Apps → hyperfin-server → Settings → Components → api → Environment Variables
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      # JWT signing secrets — generate with: openssl rand -hex 64
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: JWT_REFRESH_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      # Plaid API credentials
+      - key: PLAID_CLIENT_ID
+        scope: RUN_TIME
+        type: SECRET
+      - key: PLAID_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: PLAID_ENV
+        scope: RUN_TIME
+        value: "sandbox"
+      # Server URL for Plaid webhooks
+      - key: SERVER_URL
+        scope: RUN_TIME
+        value: "https://hyperfin-server-dzlsx.ondigitalocean.app"
+      # AES-256-GCM key for encrypting Plaid access tokens at rest.
+      # Generate with: openssl rand -hex 32
+      # SEPARATE from ADMIN_BEARER_TOKEN — admin cannot decrypt Plaid tokens.
+      - key: PLAID_TOKEN_ENCRYPTION_KEY
+        scope: RUN_TIME
+        type: SECRET
       # Required by /v1/chat/stream (cloud chat tier, opt-in only).
-      # The actual secret value must be set via the Digital Ocean dashboard
-      # or `doctl apps update` before the first deploy that references it.
       - key: ANTHROPIC_API_KEY
         scope: RUN_TIME
         type: SECRET

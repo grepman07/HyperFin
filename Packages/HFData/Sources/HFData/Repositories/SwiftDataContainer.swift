@@ -30,6 +30,19 @@ public enum SwiftDataContainer {
             if !FileManager.default.fileExists(atPath: appSupport.path) {
                 try FileManager.default.createDirectory(at: appSupport, withIntermediateDirectories: true)
             }
+
+            // Encrypt database files when the device is locked. Uses
+            // `.completeUntilFirstUserAuthentication` (not `.complete`) so
+            // background refresh tasks can still read the DB after the user
+            // unlocks the device once post-boot. This matches what most
+            // banking apps use — files are encrypted at rest in the locked
+            // bootstate, but accessible for background sync after first unlock.
+            #if os(iOS)
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                ofItemAtPath: appSupport.path
+            )
+            #endif
         }
 
         HFLogger.data.info("Creating SwiftData container (inMemory: \(inMemory))")

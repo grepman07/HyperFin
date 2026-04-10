@@ -1,31 +1,113 @@
-// Database schema — only 3 tables, zero financial data
-//
-// CREATE TABLE users (
-//   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-//   email VARCHAR(255) UNIQUE NOT NULL,
-//   password_hash VARCHAR(255) NOT NULL,
-//   created_at TIMESTAMPTZ DEFAULT NOW()
-// );
-//
-// CREATE TABLE plaid_items (
-//   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-//   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-//   access_token_encrypted TEXT NOT NULL,
-//   item_id VARCHAR(255) NOT NULL,
-//   institution_name VARCHAR(255),
-//   created_at TIMESTAMPTZ DEFAULT NOW()
-// );
-//
-// CREATE TABLE device_tokens (
-//   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-//   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-//   apns_token VARCHAR(255) NOT NULL,
-//   platform VARCHAR(10) DEFAULT 'ios',
-//   created_at TIMESTAMPTZ DEFAULT NOW()
-// );
+import { Pool, QueryResult } from 'pg';
+
+// ---------------------------------------------------------------------------
+// Connection pool — lazily created on first `query()` or `initializeDatabase()`.
+// SSL is required by default (DigitalOcean Managed PostgreSQL enforces it).
+// ---------------------------------------------------------------------------
+
+let pool: Pool | null = null;
+
+export function getPool(): Pool {
+  if (!pool) {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error('DATABASE_URL environment variable is not set');
+    }
+    pool = new Pool({
+      connectionString,
+      max: 10,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
+      // DigitalOcean Managed PostgreSQL requires SSL
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+    });
+    pool.on('error', (err) => {
+      console.error('[database] unexpected pool error:', err.message);
+    });
+  }
+  return pool;
+}
+
+/**
+ * Run a parameterised query against the pool.
+ *
+ * All SQL in the app goes through here so we have a single choke point for
+ * logging, metrics, and error normalisation.
+ */
+export async function query(text: string, params?: unknown[]): Promise<QueryResult> {
+  const p = getPool();
+  return p.query(text, params);
+}
+
+// ---------------------------------------------------------------------------
+// Schema bootstrap — runs on every cold start. All statements are idempotent
+// (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`) so they're safe
+// to re-run after restarts, redeployments, or horizontal scale-out.
+// ---------------------------------------------------------------------------
+
+const SCHEMA_SQL = `
+-- Users -------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Plaid items — access tokens encrypted with PLAID_TOKEN_ENCRYPTION_KEY ---
+CREATE TABLE IF NOT EXISTS plaid_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  access_token_enc TEXT NOT NULL,
+  item_id VARCHAR(255) NOT NULL,
+  institution_name VARCHAR(255),
+  cursor TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_plaid_items_user ON plaid_items(user_id);
+CREATE INDEX IF NOT EXISTS idx_plaid_items_item ON plaid_items(item_id);
+
+-- Device tokens (for push notifications) ----------------------------------
+CREATE TABLE IF NOT EXISTS device_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  apns_token VARCHAR(255) NOT NULL,
+  platform VARCHAR(10) DEFAULT 'ios',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id);
+
+-- Audit log — immutable append-only ----------------------------------------
+CREATE TABLE IF NOT EXISTS audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  ts TIMESTAMPTZ DEFAULT NOW(),
+  user_id UUID,
+  action VARCHAR(100) NOT NULL,
+  resource_type VARCHAR(50),
+  resource_id VARCHAR(255),
+  ip_addr INET,
+  detail JSONB
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+`;
 
 export async function initializeDatabase(): Promise<void> {
-  // TODO: Initialize pg Pool and run migrations
-  // const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  console.log('Database initialization placeholder');
+  try {
+    await query(SCHEMA_SQL);
+    console.log('[database] schema initialised');
+  } catch (err) {
+    console.error('[database] schema init failed:', err);
+    throw err;
+  }
+}
+
+/** Graceful pool shutdown (called from SIGTERM handler). */
+export async function shutdownDatabase(): Promise<void> {
+  if (pool) {
+    await pool.end();
+    pool = null;
+    console.log('[database] pool closed');
+  }
 }
