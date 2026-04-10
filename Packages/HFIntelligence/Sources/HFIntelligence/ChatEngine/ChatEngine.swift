@@ -4,6 +4,7 @@ import HFShared
 
 public actor ChatEngine {
     private let inferenceEngine: InferenceEngine
+    private let cloudEngine: CloudInferenceEngine?
     private let modelManager: ModelManager
     private let intentParser: IntentParser
     private let intentClassifier: IntentClassifier
@@ -30,9 +31,11 @@ public actor ChatEngine {
 
     public init(
         inferenceEngine: InferenceEngine,
-        modelManager: ModelManager
+        modelManager: ModelManager,
+        cloudEngine: CloudInferenceEngine? = nil
     ) {
         self.inferenceEngine = inferenceEngine
+        self.cloudEngine = cloudEngine
         self.modelManager = modelManager
         self.intentParser = IntentParser()
         self.promptAssembler = PromptAssembler()
@@ -126,21 +129,53 @@ public actor ChatEngine {
                     HFLogger.ai.info("Tool \(toolResult.toolName) returned result")
 
                     // Layer 3: Response generation
-                    if await self.modelManager.isLoaded {
-                        let tone = context.userProfile?.chatTone ?? .professional
-                        let prompt = self.promptAssembler.assembleFromToolResult(
-                            userQuery: text,
-                            toolResult: toolResult,
-                            conversationHistory: context.recentMessages,
-                            tone: tone
-                        )
+                    // Routing: if the user opted into cloud chat AND a cloud engine
+                    // is wired up, use it. Otherwise use the local model if loaded,
+                    // and finally fall back to a deterministic template response.
+                    let cloudOptIn = context.userProfile?.cloudChatOptIn ?? false
+                    let tone = context.userProfile?.chatTone ?? .professional
+                    let messages = self.promptAssembler.assembleFromToolResult(
+                        userQuery: text,
+                        toolResult: toolResult,
+                        conversationHistory: context.recentMessages,
+                        tone: tone
+                    )
 
-                        let request = InferenceRequest(prompt: prompt)
-                        for try await token in await self.inferenceEngine.generate(request) {
+                    // Local path uses structured messages so applyChatTemplate
+                    // applies the model's ChatML format exactly once (no double-wrap).
+                    let localRequest = InferenceRequest(messages: messages)
+
+                    // Cloud path uses the flattened prompt string since the server
+                    // handles its own message formatting via the Anthropic SDK.
+                    let cloudRequest = InferenceRequest(prompt: localRequest.prompt)
+
+                    if cloudOptIn, let cloudEngine = self.cloudEngine {
+                        HFLogger.ai.info("Response generation: cloud (opted in)")
+                        do {
+                            for try await token in await cloudEngine.generate(cloudRequest) {
+                                continuation.yield(token)
+                            }
+                        } catch {
+                            // Graceful fallback: if the cloud call fails (network
+                            // down, rate-limited, server 500), fall back to the
+                            // local model if available, then to the template.
+                            HFLogger.cloudChat.error("Cloud response failed, falling back: \(String(describing: error))")
+                            if await self.modelManager.isLoaded {
+                                for try await token in await self.inferenceEngine.generate(localRequest) {
+                                    continuation.yield(token)
+                                }
+                            } else {
+                                continuation.yield(toolResult.templateResponse(tone: tone))
+                            }
+                        }
+                    } else if await self.modelManager.isLoaded {
+                        HFLogger.ai.info("Response generation: local model")
+                        for try await token in await self.inferenceEngine.generate(localRequest) {
                             continuation.yield(token)
                         }
                     } else {
-                        continuation.yield(toolResult.templateResponse())
+                        HFLogger.ai.info("Response generation: template fallback")
+                        continuation.yield(toolResult.templateResponse(tone: tone))
                     }
 
                     continuation.finish()

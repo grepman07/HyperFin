@@ -10,6 +10,7 @@ let package = Package(
     dependencies: [
         .package(path: "../HFDomain"),
         .package(path: "../HFShared"),
+        .package(path: "../HFNetworking"),
         .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "2.30.6"),
     ],
     targets: [
@@ -18,6 +19,7 @@ let package = Package(
             dependencies: [
                 "HFDomain",
                 "HFShared",
+                "HFNetworking",
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
             ]

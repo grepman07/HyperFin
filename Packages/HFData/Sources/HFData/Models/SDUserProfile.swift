@@ -14,6 +14,8 @@ public final class SDUserProfile {
     public var createdAt: Date
     public var telemetryOptIn: Bool = false
     public var telemetryOptInDate: Date?
+    public var cloudChatOptIn: Bool = false
+    public var cloudChatOptInDate: Date?
 
     public init(from domain: UserProfile) {
         self.id = UUID()
@@ -26,6 +28,8 @@ public final class SDUserProfile {
         self.createdAt = domain.createdAt
         self.telemetryOptIn = domain.telemetryOptIn
         self.telemetryOptInDate = domain.telemetryOptInDate
+        self.cloudChatOptIn = domain.cloudChatOptIn
+        self.cloudChatOptInDate = domain.cloudChatOptInDate
     }
 
     public func toDomain() -> UserProfile {
@@ -39,7 +43,9 @@ public final class SDUserProfile {
             chatTone: ChatTone(rawValue: chatToneRaw) ?? .professional,
             createdAt: createdAt,
             telemetryOptIn: telemetryOptIn,
-            telemetryOptInDate: telemetryOptInDate
+            telemetryOptInDate: telemetryOptInDate,
+            cloudChatOptIn: cloudChatOptIn,
+            cloudChatOptInDate: cloudChatOptInDate
         )
     }
 }

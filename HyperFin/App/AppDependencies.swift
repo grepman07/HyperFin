@@ -27,6 +27,7 @@ final class AppDependencies {
     // AI
     let modelManager: ModelManager
     let inferenceEngine: InferenceEngine
+    let cloudInferenceEngine: CloudInferenceEngine
     let chatEngine: ChatEngine
 
     // Security
@@ -57,21 +58,29 @@ final class AppDependencies {
         self.plaidService = PlaidService(apiClient: apiClient)
         self.telemetryService = TelemetryService(apiClient: apiClient)
 
-        // AI Engine
-        self.modelManager = ModelManager()
-        self.inferenceEngine = InferenceEngine(modelManager: modelManager)
-        self.chatEngine = ChatEngine(inferenceEngine: inferenceEngine, modelManager: modelManager)
-
-        // Security
+        // Security — constructed before ChatEngine so installId is available
+        // for the CloudInferenceEngine.
         self.biometricAuth = BiometricAuthManager()
         self.keychain = KeychainManager()
         self.installIdProvider = InstallIdProvider(keychain: keychain)
 
-        // Telemetry — providers close over modelContainer so opt-in and user
-        // name are always fresh from SwiftData, not a stale snapshot.
         let container = modelContainer
         let installId = installIdProvider.currentInstallId()
         let appVersion = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"
+
+        // AI Engine — local model (always on) + cloud engine (gated by
+        // UserProfile.cloudChatOptIn at the ChatEngine routing layer).
+        self.modelManager = ModelManager()
+        self.inferenceEngine = InferenceEngine(modelManager: modelManager)
+        self.cloudInferenceEngine = CloudInferenceEngine(
+            apiClient: apiClient,
+            installId: installId
+        )
+        self.chatEngine = ChatEngine(
+            inferenceEngine: inferenceEngine,
+            modelManager: modelManager,
+            cloudEngine: cloudInferenceEngine
+        )
 
         self.telemetryLogger = TelemetryLogger(
             repo: telemetryRepo,
@@ -107,6 +116,26 @@ final class AppDependencies {
         Task { @MainActor in
             let seeder = SampleDataSeeder(container: mc)
             await seeder.seedIfNeeded()
+        }
+
+        // Kick off the on-device model download at launch. Uses Task.detached
+        // so the download is NOT tied to any SwiftUI view's `.task` lifecycle
+        // — navigating between tabs mid-download would otherwise cancel the
+        // parent task and URLSession would surface every retry as
+        // URLError.cancelled. See ChatView for the view-side companion which
+        // now only reads status.
+        let mm = modelManager
+        Task.detached {
+            let status = await mm.currentStatus
+            if case .loaded = status { return }
+            do {
+                try await mm.loadModel()
+            } catch {
+                // loadModel already logs failures; swallow here so a failed
+                // download never takes the app down. The user can retry
+                // manually from Settings → On-Device AI.
+                HFLogger.ai.error("Background model load failed: \(String(describing: error))")
+            }
         }
     }
 

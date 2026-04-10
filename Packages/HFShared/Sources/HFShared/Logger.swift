@@ -11,4 +11,5 @@ public enum HFLogger {
     public static let security = Logger(subsystem: subsystem, category: "security")
     public static let sync = Logger(subsystem: subsystem, category: "sync")
     public static let telemetry = Logger(subsystem: subsystem, category: "telemetry")
+    public static let cloudChat = Logger(subsystem: subsystem, category: "cloudChat")
 }

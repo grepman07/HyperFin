@@ -12,10 +12,10 @@ public actor ReceiptParser {
     public func parse(ocrLines: [String]) async throws -> ParsedReceipt {
         let ocrText = ocrLines.joined(separator: "\n")
         let assembler = PromptAssembler()
-        let prompt = assembler.assembleReceiptPrompt(ocrText: ocrText)
+        let messages = assembler.assembleReceiptPrompt(ocrText: ocrText)
 
         let request = InferenceRequest(
-            prompt: prompt,
+            messages: messages,
             maxTokens: HFConstants.AI.receiptParsingMaxTokens,
             temperature: HFConstants.AI.receiptParsingTemperature
         )

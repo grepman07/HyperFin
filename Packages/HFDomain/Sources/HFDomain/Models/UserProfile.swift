@@ -38,6 +38,13 @@ public struct UserProfile: Sendable, Equatable {
     public var telemetryOptIn: Bool
     /// Timestamp of the most recent opt-in (used for audit/display in Settings).
     public var telemetryOptInDate: Date?
+    /// Whether the user has opted into the cloud LLM chat tier (Claude Haiku).
+    /// Default is `false` — chat stays fully on-device unless this is explicitly enabled.
+    /// Retrieval is always local regardless of this flag; only the anonymized query and
+    /// pre-aggregated tool result are ever sent to the cloud.
+    public var cloudChatOptIn: Bool
+    /// Timestamp of the most recent cloud chat opt-in (used for audit/display in Settings).
+    public var cloudChatOptInDate: Date?
 
     public init(
         displayName: String? = nil,
@@ -48,7 +55,9 @@ public struct UserProfile: Sendable, Equatable {
         chatTone: ChatTone = .professional,
         createdAt: Date = Date(),
         telemetryOptIn: Bool = false,
-        telemetryOptInDate: Date? = nil
+        telemetryOptInDate: Date? = nil,
+        cloudChatOptIn: Bool = false,
+        cloudChatOptInDate: Date? = nil
     ) {
         self.displayName = displayName
         self.monthlyIncome = monthlyIncome
@@ -59,5 +68,7 @@ public struct UserProfile: Sendable, Equatable {
         self.createdAt = createdAt
         self.telemetryOptIn = telemetryOptIn
         self.telemetryOptInDate = telemetryOptInDate
+        self.cloudChatOptIn = cloudChatOptIn
+        self.cloudChatOptInDate = cloudChatOptInDate
     }
 }

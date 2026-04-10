@@ -6,6 +6,7 @@ struct ChatView: View {
     @Environment(AppDependencies.self) private var dependencies
     @FocusState private var isInputFocused: Bool
     @State private var viewModel = ChatViewModel()
+    @State private var showClearConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -38,15 +39,49 @@ struct ChatView: View {
             }
             .navigationTitle("HyperFin")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showClearConfirmation = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.callout)
+                    }
+                    // Disable when there's nothing beyond the welcome bubble,
+                    // or while a response is streaming (avoid partial state).
+                    .disabled(viewModel.messages.allSatisfy(\.isHelp) || viewModel.isProcessing)
+                }
+            }
+            .confirmationDialog(
+                "Clear chat history?",
+                isPresented: $showClearConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Clear All Messages", role: .destructive) {
+                    viewModel.clearHistory()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("This permanently deletes all messages. This can't be undone.")
+            }
             .onAppear {
                 viewModel.modelContainer = modelContext.container
                 viewModel.chatEngine = dependencies.chatEngine
                 viewModel.telemetryLogger = dependencies.telemetryLogger
+                viewModel.loadHistory()
             }
-            .task {
-                // Auto-load model if not already loaded
-                if await dependencies.modelManager.currentStatus != .loaded {
-                    try? await dependencies.modelManager.loadModel()
+            .onAppear {
+                // AppDependencies.init kicks off the model download at launch
+                // via a detached Task so it isn't tied to any view lifecycle.
+                // If for any reason the model still isn't loaded here, we
+                // start another detached Task — using `.task {}` would bind
+                // the download to ChatView's lifecycle and navigating to
+                // another tab would cancel it mid-download.
+                let manager = dependencies.modelManager
+                Task.detached {
+                    let status = await manager.currentStatus
+                    if case .loaded = status { return }
+                    try? await manager.loadModel()
                 }
             }
         }

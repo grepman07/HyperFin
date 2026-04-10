@@ -91,13 +91,35 @@ public actor ModelManager {
             throw ModelError.notSupported
         }
 
+        // Single-flight guard: dedup concurrent loadModel calls. Two callers
+        // (AppDependencies launch kickoff + user tapping AIModelView's
+        // "Download & Load Model" button) were racing and MLX-swift-lm was
+        // running two downloads into the same HuggingFace cache directory,
+        // which deadlocked progress at 0%. Because this method is on an
+        // actor and there is NO await between the guard check and the
+        // `status = .downloading` write below, the check is atomic: only
+        // the first caller can pass.
+        if case .loaded = status {
+            HFLogger.ai.info("loadModel: already loaded, dedup")
+            return
+        }
+        if case .downloading = status {
+            HFLogger.ai.info("loadModel: already downloading, dedup")
+            return
+        }
+        if case .loading = status {
+            HFLogger.ai.info("loadModel: already loading, dedup")
+            return
+        }
+
         #if canImport(MLXLLM) && !targetEnvironment(simulator)
         status = .downloading(progress: 0)
         let currentModelId = self.modelId
         HFLogger.ai.info("Loading model: \(currentModelId)")
 
-        // Reduce GPU cache to leave more memory for model weights
-        Memory.cacheLimit = 256 * 1024 * 1024
+        // Reduce GPU cache to leave more memory for model weights. Bumped for
+        // the 3B model (weights are ~1.74 GB quantized) — see HFConstants.AI.
+        Memory.cacheLimit = HFConstants.AI.mlxCacheLimitBytes
 
         let configuration = ModelConfiguration(id: currentModelId)
 

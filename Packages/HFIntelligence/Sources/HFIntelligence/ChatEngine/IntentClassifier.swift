@@ -19,12 +19,12 @@ struct IntentClassifier: Sendable {
         slots: ConversationSlot,
         inferenceEngine: InferenceEngine
     ) async throws -> ClassificationResult {
-        let prompt = promptAssembler.assembleClassificationPrompt(
+        let messages = promptAssembler.assembleClassificationPrompt(
             query: query,
             slots: slots
         )
         let request = InferenceRequest(
-            prompt: prompt,
+            messages: messages,
             maxTokens: HFConstants.AI.classificationMaxTokens,
             temperature: HFConstants.AI.classificationTemperature
         )

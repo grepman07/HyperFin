@@ -104,7 +104,18 @@ public enum DatePeriod: Sendable, Equatable {
 public protocol ToolResult: Sendable {
     var toolName: String { get }
     func toJSON() -> String
+    /// Generate a deterministic, tone-aware template response. Used when the
+    /// LLM is unavailable or as a fallback. Callers should pass the user's
+    /// preferred ChatTone so the wording matches their expectation.
+    func templateResponse(tone: ChatTone) -> String
+    /// Convenience overload — defaults to `.professional`.
     func templateResponse() -> String
+}
+
+public extension ToolResult {
+    func templateResponse() -> String {
+        templateResponse(tone: .professional)
+    }
 }
 
 // MARK: - Concrete Tool Results
@@ -127,20 +138,40 @@ public struct SpendAggregateResult: ToolResult, Sendable {
     }
 
     public func toJSON() -> String {
+        // Dollar amounts are pre-formatted into human-readable strings so the
+        // model only has to echo them verbatim. This avoids the small-model
+        // failure mode of echoing a "$X,XXX.XX" template hint from the system
+        // prompt.
         var merchants = "["
-        merchants += topMerchants.prefix(5).map { "{\"name\":\"\($0.name)\",\"amount\":\($0.amount)}" }.joined(separator: ",")
+        merchants += topMerchants.prefix(5)
+            .map { "{\"name\":\"\($0.name)\",\"amount\":\"\($0.amount.currencyFormatted)\"}" }
+            .joined(separator: ",")
         merchants += "]"
-        return "{\"total\":\(total),\"count\":\(count),\"category\":\(categoryLabel.map { "\"\($0)\"" } ?? "null"),\"period\":\"\(periodLabel)\",\"top_merchants\":\(merchants)}"
+        return "{\"total\":\"\(total.currencyFormatted)\",\"count\":\(count),\"category\":\(categoryLabel.map { "\"\($0)\"" } ?? "null"),\"period\":\"\(periodLabel)\",\"top_merchants\":\(merchants)}"
     }
 
-    public func templateResponse() -> String {
+    public func templateResponse(tone: ChatTone) -> String {
         let label = categoryLabel ?? "total"
-        var response = "You spent \(total.currencyFormatted) on \(label) \(periodLabel) across \(count) transaction\(count == 1 ? "" : "s")."
-        if topMerchants.count > 1 {
-            let merchantList = topMerchants.prefix(3).map { "\($0.name): \($0.amount.currencyFormatted)" }.joined(separator: ", ")
-            response += "\n\nTop merchants: \(merchantList)"
+        let txnWord = count == 1 ? "transaction" : "transactions"
+        let merchantSuffix: String = {
+            guard topMerchants.count > 1 else { return "" }
+            let list = topMerchants.prefix(3).map { "\($0.name): \($0.amount.currencyFormatted)" }.joined(separator: ", ")
+            return "\n\nTop merchants: \(list)"
+        }()
+
+        switch tone {
+        case .professional:
+            return "You spent \(total.currencyFormatted) on \(label) \(periodLabel) across \(count) \(txnWord).\(merchantSuffix)"
+        case .friendly:
+            return "Looks like you spent \(total.currencyFormatted) on \(label) \(periodLabel) across \(count) \(txnWord) — not bad!\(merchantSuffix)"
+        case .funny:
+            if total > 0 {
+                return "Whoa, \(total.currencyFormatted) on \(label) \(periodLabel)? Your wallet might need a wellness check! That's \(count) \(txnWord).\(merchantSuffix)"
+            }
+            return "Zero dollars on \(label) \(periodLabel)? Either you're incredibly disciplined or you forgot your wallet at home."
+        case .strict:
+            return "You spent \(total.currencyFormatted) on \(label) \(periodLabel) across \(count) \(txnWord). Review whether this aligns with your financial goals.\(merchantSuffix)"
         }
-        return response
     }
 }
 
@@ -174,33 +205,70 @@ public struct BudgetCompareResult: ToolResult, Sendable {
 
     public func toJSON() -> String {
         var over = "["
-        over += overBudgetCategories.map { "{\"name\":\"\($0.name)\",\"spent\":\($0.spent),\"allocated\":\($0.allocated)}" }.joined(separator: ",")
+        over += overBudgetCategories
+            .map { "{\"name\":\"\($0.name)\",\"spent\":\"\($0.spent.currencyFormatted)\",\"allocated\":\"\($0.allocated.currencyFormatted)\"}" }
+            .joined(separator: ",")
         over += "]"
         var near = "["
         near += nearLimitCategories.map { "{\"name\":\"\($0.name)\",\"percent\":\($0.percentUsed)}" }.joined(separator: ",")
         near += "]"
-        return "{\"actual\":\(actual),\"budget\":\(budget),\"delta\":\(delta),\"percent_used\":\(percentUsed),\"is_over\":\(isOver),\"category\":\(categoryLabel.map { "\"\($0)\"" } ?? "null"),\"period\":\"\(periodLabel)\",\"over_budget\":\(over),\"near_limit\":\(near)}"
+        return "{\"actual\":\"\(actual.currencyFormatted)\",\"budget\":\"\(budget.currencyFormatted)\",\"delta\":\"\(delta.currencyFormatted)\",\"percent_used\":\(percentUsed),\"is_over\":\(isOver),\"category\":\(categoryLabel.map { "\"\($0)\"" } ?? "null"),\"period\":\"\(periodLabel)\",\"over_budget\":\(over),\"near_limit\":\(near)}"
     }
 
-    public func templateResponse() -> String {
+    public func templateResponse(tone: ChatTone) -> String {
+        let overUnderSuffix: String = {
+            var parts = ""
+            if !overBudgetCategories.isEmpty {
+                parts += "\n\nOver budget:"
+                for cat in overBudgetCategories {
+                    parts += "\n- \(cat.name): \(cat.spent.currencyFormatted) / \(cat.allocated.currencyFormatted)"
+                }
+            }
+            if !nearLimitCategories.isEmpty {
+                parts += "\n\nApproaching limit:"
+                for cat in nearLimitCategories {
+                    parts += "\n- \(cat.name): \(cat.percentUsed)% used"
+                }
+            }
+            return parts
+        }()
+
         if let cat = categoryLabel {
             let remaining = budget - actual
-            return "\(cat) budget: \(actual.currencyFormatted) spent of \(budget.currencyFormatted) (\(percentUsed)%).\n\nYou have \(remaining.currencyFormatted) remaining this month."
-        }
-        var response = "Monthly Budget Overview\n\nSpent: \(actual.currencyFormatted) of \(budget.currencyFormatted) (\(percentUsed)%)"
-        if !overBudgetCategories.isEmpty {
-            response += "\n\nOver budget:"
-            for cat in overBudgetCategories {
-                response += "\n- \(cat.name): \(cat.spent.currencyFormatted) / \(cat.allocated.currencyFormatted)"
+            switch tone {
+            case .professional:
+                return "\(cat) budget: \(actual.currencyFormatted) spent of \(budget.currencyFormatted) (\(percentUsed)%). You have \(remaining.currencyFormatted) remaining."
+            case .friendly:
+                if isOver {
+                    return "Heads up — you've gone a bit over on \(cat)! You've spent \(actual.currencyFormatted) out of \(budget.currencyFormatted). Maybe ease up a little?"
+                }
+                return "You're doing well on \(cat)! \(actual.currencyFormatted) spent of \(budget.currencyFormatted) — that leaves \(remaining.currencyFormatted) to go."
+            case .funny:
+                if isOver {
+                    return "Your \(cat) budget called — it wants its money back! \(actual.currencyFormatted) spent vs. \(budget.currencyFormatted) budgeted. You're \((-delta).currencyFormatted) over. Oops!"
+                }
+                return "Good news: your \(cat) budget is still alive! \(actual.currencyFormatted) of \(budget.currencyFormatted) spent, with \(remaining.currencyFormatted) left to burn."
+            case .strict:
+                if isOver {
+                    return "You have exceeded your \(cat) budget. Spent: \(actual.currencyFormatted) vs. \(budget.currencyFormatted) allocated. Overage: \((-delta).currencyFormatted). Immediate corrective action is recommended."
+                }
+                return "\(cat) budget: \(actual.currencyFormatted) of \(budget.currencyFormatted) (\(percentUsed)%). Remaining: \(remaining.currencyFormatted). Stay disciplined."
             }
         }
-        if !nearLimitCategories.isEmpty {
-            response += "\n\nApproaching limit:"
-            for cat in nearLimitCategories {
-                response += "\n- \(cat.name): \(cat.percentUsed)% used"
+
+        switch tone {
+        case .professional:
+            return "Monthly Budget Overview\n\nSpent: \(actual.currencyFormatted) of \(budget.currencyFormatted) (\(percentUsed)%)\(overUnderSuffix)"
+        case .friendly:
+            return "Here's your budget snapshot! You've spent \(actual.currencyFormatted) out of \(budget.currencyFormatted) so far (\(percentUsed)%).\(overUnderSuffix)"
+        case .funny:
+            if isOver {
+                return "Budget report card: C-minus. \(actual.currencyFormatted) spent vs. \(budget.currencyFormatted) planned. Your budget is giving you side-eye.\(overUnderSuffix)"
             }
+            return "Budget check! \(actual.currencyFormatted) of \(budget.currencyFormatted) spent (\(percentUsed)%). Your wallet says thanks for not emptying it.\(overUnderSuffix)"
+        case .strict:
+            return "Budget Status: \(actual.currencyFormatted) of \(budget.currencyFormatted) (\(percentUsed)%). \(isOver ? "You are over budget. Reduce spending immediately." : "Within limits. Maintain discipline.")\(overUnderSuffix)"
         }
-        return response
     }
 }
 
@@ -224,15 +292,33 @@ public struct AnomalyResult: ToolResult, Sendable {
     }
 
     public func toJSON() -> String {
-        "{\"is_spike\":\(isSpike),\"baseline\":\(baseline),\"current\":\(current),\"delta_percent\":\(deltaPercent),\"category\":\(categoryLabel.map { "\"\($0)\"" } ?? "null"),\"period\":\"\(periodLabel)\"}"
+        "{\"is_spike\":\(isSpike),\"baseline\":\"\(baseline.currencyFormatted)\",\"current\":\"\(current.currencyFormatted)\",\"delta_percent\":\(deltaPercent),\"category\":\(categoryLabel.map { "\"\($0)\"" } ?? "null"),\"period\":\"\(periodLabel)\"}"
     }
 
-    public func templateResponse() -> String {
+    public func templateResponse(tone: ChatTone) -> String {
         let label = categoryLabel ?? "overall spending"
         if isSpike {
-            return "Spending spike detected for \(label) \(periodLabel). Current: \(current.currencyFormatted) vs. your 3-month average of \(baseline.currencyFormatted) (+\(deltaPercent)%)."
+            switch tone {
+            case .professional:
+                return "Spending spike detected for \(label) \(periodLabel). Current: \(current.currencyFormatted) vs. your 3-month average of \(baseline.currencyFormatted) (+\(deltaPercent)%)."
+            case .friendly:
+                return "Heads up — your \(label) is running higher than usual \(periodLabel)! You're at \(current.currencyFormatted) compared to a \(baseline.currencyFormatted) average. That's \(deltaPercent)% more than normal."
+            case .funny:
+                return "Yikes! Your \(label) \(periodLabel) just hit \(current.currencyFormatted) — that's \(deltaPercent)% above your \(baseline.currencyFormatted) average. Did you adopt a shopping hobby?"
+            case .strict:
+                return "Alert: \(label) spending is \(deltaPercent)% above baseline. Current: \(current.currencyFormatted) vs. average: \(baseline.currencyFormatted). Investigate and correct immediately."
+            }
         }
-        return "No unusual spending detected for \(label) \(periodLabel). Current: \(current.currencyFormatted), 3-month average: \(baseline.currencyFormatted)."
+        switch tone {
+        case .professional:
+            return "No unusual spending detected for \(label) \(periodLabel). Current: \(current.currencyFormatted), 3-month average: \(baseline.currencyFormatted)."
+        case .friendly:
+            return "All good on \(label) \(periodLabel)! You're at \(current.currencyFormatted), right in line with your \(baseline.currencyFormatted) average. Keep it up!"
+        case .funny:
+            return "Nothing weird going on with \(label) \(periodLabel) — \(current.currencyFormatted) vs. \(baseline.currencyFormatted) average. Boringly responsible. Love it."
+        case .strict:
+            return "No anomalies for \(label) \(periodLabel). Current: \(current.currencyFormatted), baseline: \(baseline.currencyFormatted). Continue monitoring."
+        }
     }
 }
 
@@ -253,23 +339,37 @@ public struct TrendResult: ToolResult, Sendable {
 
     public func toJSON() -> String {
         var months = "["
-        months += monthlyTotals.map { "{\"month\":\"\($0.month)\",\"amount\":\($0.amount)}" }.joined(separator: ",")
+        months += monthlyTotals
+            .map { "{\"month\":\"\($0.month)\",\"amount\":\"\($0.amount.currencyFormatted)\"}" }
+            .joined(separator: ",")
         months += "]"
-        return "{\"monthly_totals\":\(months),\"mom_growth_rate\":\(String(format: "%.1f", momGrowthRate)),\"projected_annual\":\(projectedAnnual),\"category\":\(categoryLabel.map { "\"\($0)\"" } ?? "null")}"
+        return "{\"monthly_totals\":\(months),\"mom_growth_rate\":\(String(format: "%.1f", momGrowthRate)),\"projected_annual\":\"\(projectedAnnual.currencyFormatted)\",\"category\":\(categoryLabel.map { "\"\($0)\"" } ?? "null")}"
     }
 
-    public func templateResponse() -> String {
+    public func templateResponse(tone: ChatTone) -> String {
         let label = categoryLabel ?? "total spending"
-        var response = "Spending trend for \(label):\n"
-        for entry in monthlyTotals {
-            response += "\n- \(entry.month): \(entry.amount.currencyFormatted)"
-        }
         let direction = momGrowthRate > 0 ? "up" : "down"
-        let absGrowth = Swift.abs(momGrowthRate)
-        response += "\n\nMonth-over-month: \(direction) \(String(format: "%.1f", absGrowth))%"
+        let absGrowth = String(format: "%.1f", Swift.abs(momGrowthRate))
         let projFormatted = projectedAnnual.currencyFormatted
-        response += "\nProjected annual: \(projFormatted)"
-        return response
+
+        var monthBreakdown = ""
+        for entry in monthlyTotals {
+            monthBreakdown += "\n- \(entry.month): \(entry.amount.currencyFormatted)"
+        }
+
+        switch tone {
+        case .professional:
+            return "Spending trend for \(label):\(monthBreakdown)\n\nMonth-over-month: \(direction) \(absGrowth)%\nProjected annual: \(projFormatted)"
+        case .friendly:
+            return "Here's how your \(label) has been trending:\(monthBreakdown)\n\nYou're trending \(direction) \(absGrowth)% month-over-month. At this pace, you're on track for about \(projFormatted) this year."
+        case .funny:
+            if momGrowthRate > 5 {
+                return "Your \(label) is climbing faster than gas prices!\(monthBreakdown)\n\nThat's \(direction) \(absGrowth)% month-over-month. Annual projection: \(projFormatted). Might want to pump the brakes!"
+            }
+            return "Your \(label) trend report is in:\(monthBreakdown)\n\nTrending \(direction) \(absGrowth)% monthly. Projected annual: \(projFormatted). Your accountant would approve."
+        case .strict:
+            return "\(label) trend analysis:\(monthBreakdown)\n\nDirection: \(direction) \(absGrowth)% month-over-month. Projected annual: \(projFormatted). \(momGrowthRate > 0 ? "Evaluate whether this trajectory is sustainable." : "Downward trend noted. Maintain course.")"
+        }
     }
 }
 
@@ -286,20 +386,36 @@ public struct AccountBalanceResult: ToolResult, Sendable {
 
     public func toJSON() -> String {
         var accs = "["
-        accs += accounts.map { "{\"name\":\"\($0.name)\",\"institution\":\"\($0.institution)\",\"balance\":\($0.balance)}" }.joined(separator: ",")
+        accs += accounts
+            .map { "{\"name\":\"\($0.name)\",\"institution\":\"\($0.institution)\",\"balance\":\"\($0.balance.currencyFormatted)\"}" }
+            .joined(separator: ",")
         accs += "]"
-        return "{\"accounts\":\(accs),\"total_balance\":\(totalBalance)}"
+        return "{\"accounts\":\(accs),\"total_balance\":\"\(totalBalance.currencyFormatted)\"}"
     }
 
-    public func templateResponse() -> String {
+    public func templateResponse(tone: ChatTone) -> String {
         if accounts.isEmpty {
-            return "No accounts linked yet. Connect a bank account to see your balances."
+            switch tone {
+            case .professional: return "No accounts linked yet. Connect a bank account to see your balances."
+            case .friendly: return "Looks like you haven't linked any accounts yet! Once you do, I can show you your balances."
+            case .funny: return "I'd love to tell you your balance, but there are no accounts linked. It's like checking the fridge when you haven't gone shopping!"
+            case .strict: return "No accounts linked. Connect a bank account to proceed."
+            }
         }
-        var response = "Total across all accounts: \(totalBalance.currencyFormatted)"
+        var accountList = ""
         for acc in accounts {
-            response += "\n- \(acc.name) (\(acc.institution)): \(acc.balance.currencyFormatted)"
+            accountList += "\n- \(acc.name) (\(acc.institution)): \(acc.balance.currencyFormatted)"
         }
-        return response
+        switch tone {
+        case .professional:
+            return "Total across all accounts: \(totalBalance.currencyFormatted)\(accountList)"
+        case .friendly:
+            return "Here are your balances! Your total across all accounts is \(totalBalance.currencyFormatted).\(accountList)"
+        case .funny:
+            return "Drumroll please... your total balance is \(totalBalance.currencyFormatted)! Here's the breakdown:\(accountList)"
+        case .strict:
+            return "Account balances — Total: \(totalBalance.currencyFormatted)\(accountList)"
+        }
     }
 }
 
@@ -320,25 +436,40 @@ public struct TransactionSearchResult: ToolResult, Sendable {
 
     public func toJSON() -> String {
         var txns = "["
-        txns += transactions.prefix(5).map { "{\"date\":\"\($0.date)\",\"amount\":\($0.amount)}" }.joined(separator: ",")
+        txns += transactions.prefix(5)
+            .map { "{\"date\":\"\($0.date)\",\"amount\":\"\($0.amount.currencyFormatted)\"}" }
+            .joined(separator: ",")
         txns += "]"
-        return "{\"merchant\":\"\(merchant)\",\"total\":\(total),\"count\":\(count),\"recent_transactions\":\(txns)}"
+        return "{\"merchant\":\"\(merchant)\",\"total\":\"\(total.currencyFormatted)\",\"count\":\(count),\"recent_transactions\":\(txns)}"
     }
 
-    public func templateResponse() -> String {
+    public func templateResponse(tone: ChatTone) -> String {
         if count == 0 {
-            return "No transactions found from \"\(merchant)\"."
+            switch tone {
+            case .professional: return "No transactions found from \"\(merchant)\"."
+            case .friendly: return "I couldn't find any transactions from \(merchant). Maybe double-check the name?"
+            case .funny: return "Zero transactions from \(merchant). Either you've never been there or they owe you a receipt!"
+            case .strict: return "No transactions found from \"\(merchant)\". Verify the merchant name."
+            }
         }
-        var response = "Found \(count) transaction\(count == 1 ? "" : "s") from \(merchant) (total: \(total.currencyFormatted)).\n\nRecent:"
+        let txnWord = count == 1 ? "transaction" : "transactions"
+        var txnList = ""
         for txn in transactions.prefix(5) {
             let negated = -txn.amount
             let amt = txn.amount < 0 ? "+\(negated.currencyFormatted)" : txn.amount.currencyFormatted
-            response += "\n- \(txn.date): \(amt)"
+            txnList += "\n- \(txn.date): \(amt)"
         }
-        if count > 5 {
-            response += "\n\n...and \(count - 5) more."
+        let moreSuffix = count > 5 ? "\n\n...and \(count - 5) more." : ""
+        switch tone {
+        case .professional:
+            return "Found \(count) \(txnWord) from \(merchant) (total: \(total.currencyFormatted)).\n\nRecent:\(txnList)\(moreSuffix)"
+        case .friendly:
+            return "I found \(count) \(txnWord) from \(merchant) totaling \(total.currencyFormatted). Here are the recent ones:\(txnList)\(moreSuffix)"
+        case .funny:
+            return "You and \(merchant) have quite the relationship — \(count) \(txnWord) totaling \(total.currencyFormatted)!\(txnList)\(moreSuffix)"
+        case .strict:
+            return "\(count) \(txnWord) from \(merchant). Total: \(total.currencyFormatted).\(txnList)\(moreSuffix)"
         }
-        return response
     }
 }
 
@@ -357,7 +488,9 @@ public struct PassthroughResult: ToolResult, Sendable {
         "{\"type\":\"\(intentType)\",\"message\":\"\(message)\"}"
     }
 
-    public func templateResponse() -> String {
+    public func templateResponse(tone: ChatTone) -> String {
+        // Passthrough messages are pre-composed (greetings, advice, etc.)
+        // and don't vary by tone — the upstream already wrote them.
         message
     }
 }

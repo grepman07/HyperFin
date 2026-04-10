@@ -10,21 +10,24 @@ public enum APIError: Error, Sendable {
 }
 
 public actor APIClient {
-    private let baseURL: String
-    private let session: URLSession
+    // Module-internal so same-module extensions (e.g. APIClient+Streaming.swift)
+    // can reach them. Not `public` — external callers must go through the
+    // public methods.
+    let baseURL: String
+    let session: URLSession
     private var accessToken: String?
     private var refreshToken: String?
 
     /// Shared encoder — ISO 8601 dates so server-side Zod `z.string().datetime()`
     /// validators accept timestamps. Default Swift encoding is a Double of
     /// seconds-since-2001 which fails any `.datetime()` validator.
-    private let encoder: JSONEncoder = {
+    let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         return e
     }()
 
-    private let decoder: JSONDecoder = {
+    let decoder: JSONDecoder = {
         let d = JSONDecoder()
         d.dateDecodingStrategy = .iso8601
         return d

@@ -67,7 +67,19 @@ struct SettingsView: View {
                         HStack {
                             Label("On-Device AI", systemImage: "brain")
                             Spacer()
-                            Text(ModelManager.isMLXSupported ? "Qwen 3.5 0.8B" : "Simulator")
+                            Text(ModelManager.isMLXSupported ? HFConstants.AI.modelShortDisplayName : "Simulator")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    NavigationLink {
+                        PrivacySettingsView()
+                    } label: {
+                        HStack {
+                            Label("Cloud Chat", systemImage: "cloud.fill")
+                            Spacer()
+                            Text(profiles.first?.cloudChatOptIn == true ? "On" : "Off")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

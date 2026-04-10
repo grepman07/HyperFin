@@ -175,7 +175,7 @@ struct SampleDataSeeder {
             TxnTemplate(merchant: "Home Depot", category: "Home", minAmount: 15.00, maxAmount: 120.00, frequency: 1, accountType: "credit"),
             // Income
             TxnTemplate(merchant: "Employer Direct Deposit", category: "Income", minAmount: -3_750.00, maxAmount: -3_750.00, frequency: 2, accountType: "checking"),
-            TxnTemplate(merchant: "Venmo Transfer In", category: "Income", minAmount: -25.00, maxAmount: -150.00, frequency: 2, accountType: "checking"),
+            TxnTemplate(merchant: "Venmo Transfer In", category: "Income", minAmount: -150.00, maxAmount: -25.00, frequency: 2, accountType: "checking"),
         ]
 
         for daysAgo in 0..<90 {
@@ -188,7 +188,12 @@ struct SampleDataSeeder {
                 if template.minAmount == template.maxAmount {
                     amount = Decimal(template.minAmount)
                 } else {
-                    let raw = Double.random(in: template.minAmount...template.maxAmount)
+                    // Defensive: normalize so any accidentally-swapped
+                    // min/max (as happened with Venmo Transfer In) still
+                    // yields a valid ClosedRange instead of crashing.
+                    let lo = Swift.min(template.minAmount, template.maxAmount)
+                    let hi = Swift.max(template.minAmount, template.maxAmount)
+                    let raw = Double.random(in: lo...hi)
                     amount = Decimal(string: String(format: "%.2f", raw))!
                 }
 

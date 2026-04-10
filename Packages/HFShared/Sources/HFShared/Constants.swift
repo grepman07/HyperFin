@@ -5,6 +5,12 @@ public enum HFConstants {
         public static let baseURL = "https://hyperfin-server-dzlsx.ondigitalocean.app"
         public static let apiVersion = "v1"
         public static let timeoutInterval: TimeInterval = 30
+        /// Endpoint path (under /<apiVersion>/) for the server-side cloud chat
+        /// proxy that streams Claude Haiku responses back to the client.
+        public static let cloudChatStreamPath = "chat/stream"
+        /// Streaming inference can take substantially longer than a regular
+        /// request, so we give it its own timeout.
+        public static let cloudChatTimeoutInterval: TimeInterval = 60
     }
 
     public enum Sync {
@@ -14,16 +20,25 @@ public enum HFConstants {
     }
 
     public enum AI {
-        public static let modelName = "Qwen3.5-0.8B-MLX-4bit"
-        public static let modelHuggingFaceId = "mlx-community/Qwen3.5-0.8B-MLX-4bit"
+        public static let modelName = "Qwen2.5-3B-Instruct-4bit"
+        public static let modelHuggingFaceId = "mlx-community/Qwen2.5-3B-Instruct-4bit"
+        /// Short label for compact rows ("Qwen 2.5 3B").
+        public static let modelShortDisplayName = "Qwen 2.5 3B"
+        /// Full label with quantization ("Qwen 2.5 3B (4-bit)").
+        public static let modelDisplayName = "Qwen 2.5 3B (4-bit)"
+        /// Approximate on-disk download size for UI display.
+        public static let modelDownloadSize = "~1.7 GB"
         public static let modelDirectory = "Models"
         public static let maxGenerationTokens = 512
         public static let temperature: Float = 0.6
-        public static let minAvailableMemoryMB = 512
+        public static let minAvailableMemoryMB = 1024
         public static let receiptParsingMaxTokens = 256
         public static let receiptParsingTemperature: Float = 0.1
         public static let classificationMaxTokens = 100
         public static let classificationTemperature: Float = 0.1
+        /// MLX GPU cache limit in bytes. Bumped from 256 MB → 512 MB for the
+        /// larger 3B model (weights are ~1.74 GB quantized).
+        public static let mlxCacheLimitBytes = 512 * 1024 * 1024
     }
 
     public enum Budget {
@@ -42,6 +57,14 @@ public enum HFConstants {
         public static let bundleId = "com.hyperfin.app"
         public static let appGroup = "group.com.hyperfin.app"
         public static let minimumIOSVersion = "17.0"
+    }
+
+    public enum Chat {
+        /// Chat messages older than this are auto-purged from SwiftData on
+        /// app launch and excluded from history restoration. The rolling
+        /// window keeps the conversation feeling continuous without letting
+        /// the on-device store grow unbounded.
+        public static let historyRetentionDays = 30
     }
 
     public enum Telemetry {
