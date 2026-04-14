@@ -7,6 +7,7 @@ import HFDomain
 import HFData
 import HFShared
 import HFIntelligence
+import HFSecurity
 
 enum PlaidLinkState: Equatable {
     case idle
@@ -63,6 +64,7 @@ final class PlaidLinkHandler {
     func startLinking() async {
         state = .loading
         errorMessage = nil
+        SecurityAuditLogger.logAccess(action: "plaid_link_started", resource: "plaid_link_token")
 
         do {
             let linkTokenResponse = try await plaidService.createLinkToken()
@@ -110,12 +112,27 @@ final class PlaidLinkHandler {
     private func handleLinkSuccess(_ success: LinkSuccess) async {
         let publicToken = success.publicToken
         HFLogger.network.info("Plaid Link success, exchanging token...")
+        SecurityAuditLogger.logAccess(
+            action: "plaid_public_token_received",
+            resource: "plaid_public_token",
+            detail: "institution=\(success.metadata.institution.name)"
+        )
 
         state = .exchanging
         do {
             let exchange = try await plaidService.exchangePublicToken(publicToken)
+            SecurityAuditLogger.logAccess(
+                action: "plaid_token_exchanged",
+                resource: "plaid_item",
+                detail: "institution=\(exchange.institutionName)"
+            )
             await syncTransactions(institutionName: exchange.institutionName)
         } catch {
+            SecurityAuditLogger.logAccess(
+                action: "plaid_exchange_failed",
+                resource: "plaid_public_token",
+                detail: error.localizedDescription
+            )
             state = .error("Failed to link account: \(error.localizedDescription)")
             errorMessage = error.localizedDescription
         }

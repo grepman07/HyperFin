@@ -38,10 +38,15 @@ public struct KeychainManager: Sendable {
             ]
             let updateStatus = SecItemUpdate(updateQuery as CFDictionary, updateAttributes as CFDictionary)
             guard updateStatus == errSecSuccess else {
+                SecurityAuditLogger.logDataProtection("keychain_update_failed: key=\(key) status=\(updateStatus)")
                 throw KeychainError.unexpectedStatus(updateStatus)
             }
+            SecurityAuditLogger.logDataProtection("keychain_update: key=\(key)")
         } else if status != errSecSuccess {
+            SecurityAuditLogger.logDataProtection("keychain_save_failed: key=\(key) status=\(status)")
             throw KeychainError.unexpectedStatus(status)
+        } else {
+            SecurityAuditLogger.logDataProtection("keychain_save: key=\(key)")
         }
     }
 
@@ -72,8 +77,10 @@ public struct KeychainManager: Sendable {
         ]
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
+            SecurityAuditLogger.logDataProtection("keychain_delete_failed: key=\(key) status=\(status)")
             throw KeychainError.unexpectedStatus(status)
         }
+        SecurityAuditLogger.logDataProtection("keychain_delete: key=\(key)")
     }
 
     public func saveString(key: String, value: String) throws {

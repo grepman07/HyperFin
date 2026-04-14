@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
 import { authRouter } from './routes/auth';
 import { plaidRouter } from './routes/plaid';
 import { configRouter } from './routes/config';
@@ -11,6 +12,8 @@ import { telemetryRouter } from './routes/telemetry';
 import { cloudChatRouter } from './routes/cloudChat';
 import { adminRouter } from './routes/admin';
 import { uploaderFromEnv } from './telemetry/s3Uploader';
+import { initializeDatabase, shutdownDatabase } from './services/database';
+import { requireAuth } from './middleware/auth';
 
 dotenv.config();
 
@@ -20,23 +23,36 @@ const PORT = process.env.PORT || 3000;
 // Security middleware
 app.use(helmet());
 app.use(cors({ origin: process.env.ALLOWED_ORIGINS?.split(',') || '*' }));
+
+// Trust DigitalOcean's load balancer so req.ip returns the real client IP
+app.set('trust proxy', 1);
+
 // 256kb limit (default is 100kb, which is tight for assembled chat prompts
 // that include tool result JSON + conversation history).
 app.use(express.json({ limit: '256kb' }));
 
-// Health check
+// Rate limit on auth endpoints — 20 req/min per IP
+const authLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many auth requests. Try again in a minute.' },
+});
+
+// Health check (unauthenticated)
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'hyperfin-server', version: '1.0.0' });
 });
 
 // API routes
-app.use('/v1/auth', authRouter);
-app.use('/v1/plaid', plaidRouter);
-app.use('/v1/config', configRouter);
-app.use('/v1/plaid/webhooks', webhookRouter);
-app.use('/v1/telemetry', telemetryRouter);
-app.use('/v1/chat', cloudChatRouter);
-app.use('/v1/admin', adminRouter);
+app.use('/v1/auth', authLimiter, authRouter);          // Unauthenticated (login/register)
+app.use('/v1/plaid', requireAuth, plaidRouter);         // Authenticated — JWT required
+app.use('/v1/config', configRouter);                    // Unauthenticated — public config
+app.use('/v1/plaid/webhooks', webhookRouter);           // Plaid-signed (webhook verification)
+app.use('/v1/telemetry', telemetryRouter);              // Install-ID based (no JWT)
+app.use('/v1/chat', cloudChatRouter);                   // Install-ID + rate limit
+app.use('/v1/admin', adminRouter);                      // Admin bearer token
 
 // Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -45,39 +61,61 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 // S3 telemetry uploader — durable storage for training data.
-// The container filesystem is ephemeral on DO App Platform, so this hourly
-// tick is the only thing standing between a redeploy and lost rows. Returns
-// null and warns if AWS_* env vars are missing — useful for local dev.
 const TELEMETRY_DIR =
   process.env.TELEMETRY_DIR || path.join(process.cwd(), 'telemetry-data');
 const s3Uploader = uploaderFromEnv(TELEMETRY_DIR);
 s3Uploader?.start();
 
-const server = app.listen(PORT, () => {
-  console.log(`HyperFin server running on port ${PORT}`);
-  console.log('This server handles ONLY: auth, Plaid relay, config, webhooks');
-  console.log('Zero financial data processing. Zero AI inference.');
-});
+// ---------------------------------------------------------------------------
+// Startup — initialise database then listen
+// ---------------------------------------------------------------------------
 
-// Graceful shutdown — flush the JSONL buffer to S3 before the container
-// disappears. DO App Platform sends SIGTERM and waits ~10s before SIGKILL,
-// which is enough headroom for a single PUT per file in normal operation.
-async function shutdown(signal: string) {
-  console.log(`[shutdown] received ${signal}, flushing telemetry to S3...`);
-  try {
-    await s3Uploader?.shutdown();
-  } catch (err) {
-    console.error('[shutdown] s3 flush error:', err);
+async function start() {
+  // Initialise PostgreSQL schema (idempotent — safe to re-run on every deploy)
+  if (process.env.DATABASE_URL) {
+    try {
+      await initializeDatabase();
+    } catch (err) {
+      console.error('[startup] database init failed — continuing without DB:', err);
+      // Don't crash the server — auth and Plaid routes will fail gracefully
+      // with 500s, but health check, config, telemetry, and chat still work.
+    }
+  } else {
+    console.warn('[startup] DATABASE_URL not set — auth and Plaid features disabled');
   }
-  server.close(() => {
-    console.log('[shutdown] http server closed, exiting');
-    process.exit(0);
+
+  const server = app.listen(PORT, () => {
+    console.log(`HyperFin server running on port ${PORT}`);
   });
-  // Hard exit safety net if close() hangs
-  setTimeout(() => process.exit(0), 8000).unref();
+
+  // Graceful shutdown
+  async function shutdown(signal: string) {
+    console.log(`[shutdown] received ${signal}`);
+    try {
+      await s3Uploader?.shutdown();
+    } catch (err) {
+      console.error('[shutdown] s3 flush error:', err);
+    }
+    try {
+      await shutdownDatabase();
+    } catch (err) {
+      console.error('[shutdown] database close error:', err);
+    }
+    server.close(() => {
+      console.log('[shutdown] http server closed, exiting');
+      process.exit(0);
+    });
+    // Hard exit safety net if close() hangs
+    setTimeout(() => process.exit(0), 8000).unref();
+  }
+
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  process.on('SIGINT', () => void shutdown('SIGINT'));
 }
 
-process.on('SIGTERM', () => void shutdown('SIGTERM'));
-process.on('SIGINT', () => void shutdown('SIGINT'));
+start().catch((err) => {
+  console.error('[startup] fatal error:', err);
+  process.exit(1);
+});
 
 export default app;
