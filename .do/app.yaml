@@ -1,4 +1,21 @@
 name: hyperfin-server
+# ---------------------------------------------------------------------------
+# Databases
+#
+# `db` is a Dev Database (PostgreSQL 16, $7/mo) — sufficient for the Plaid
+# Development tier (up to 100 live Items) and beta rollout. Before requesting
+# Plaid Production access, migrate this to a Managed PostgreSQL by setting
+# `production: true` (note: this triggers a recreate; dump/restore required).
+#
+# The DATABASE_URL env var below uses DO App Platform's component-binding
+# syntax (${db.DATABASE_URL}) so the connection string is auto-injected and
+# rotated by the platform — no manual secret management.
+# ---------------------------------------------------------------------------
+databases:
+  - name: db
+    engine: PG
+    version: "16"
+    production: false
 services:
   - name: api
     github:
@@ -19,11 +36,12 @@ services:
         value: "3000"
       - key: ALLOWED_ORIGINS
         value: "*"
-      # PostgreSQL connection string — use DigitalOcean Managed PostgreSQL.
-      # Set via dashboard: Apps → hyperfin-server → Settings → Components → api → Environment Variables
+      # PostgreSQL connection string — auto-injected by the `db` component
+      # declared in the top-level `databases:` block. DO App Platform resolves
+      # ${db.DATABASE_URL} at deploy time to the Dev DB's sslmode=require URL.
       - key: DATABASE_URL
         scope: RUN_TIME
-        type: SECRET
+        value: ${db.DATABASE_URL}
       # JWT signing secrets — generate with: openssl rand -hex 64
       - key: JWT_SECRET
         scope: RUN_TIME
