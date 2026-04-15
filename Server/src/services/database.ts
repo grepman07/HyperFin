@@ -58,8 +58,8 @@ export async function query(text: string, params?: unknown[]): Promise<QueryResu
 // ---------------------------------------------------------------------------
 
 const SCHEMA_SQL = `
--- Own schema — Postgres 16 revoked default CREATE on `public` for non-owners,
--- so we create a schema the app's DB user owns. search_path is set at pool
+-- Own schema -- Postgres 16 revoked default CREATE on public for non-owners,
+-- so we create a schema the app DB user owns. search_path is set at pool
 -- connect time (see getPool) so all unqualified references land here.
 CREATE SCHEMA IF NOT EXISTS hyperfin AUTHORIZATION CURRENT_USER;
 SET search_path TO hyperfin, public;
