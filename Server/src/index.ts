@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
 import { authRouter } from './routes/auth';
 import { plaidRouter } from './routes/plaid';
+import { investmentsRouter } from './routes/investments';
+import { liabilitiesRouter } from './routes/liabilities';
 import { configRouter } from './routes/config';
 import { webhookRouter } from './routes/webhooks';
 import { telemetryRouter } from './routes/telemetry';
@@ -48,6 +50,8 @@ app.get('/health', (_req, res) => {
 // API routes
 app.use('/v1/auth', authLimiter, authRouter);          // Unauthenticated (login/register)
 app.use('/v1/plaid', requireAuth, plaidRouter);         // Authenticated — JWT required
+app.use('/v1/investments', requireAuth, investmentsRouter); // Authenticated — Plaid investments
+app.use('/v1/liabilities', requireAuth, liabilitiesRouter); // Authenticated — Plaid liabilities
 app.use('/v1/config', configRouter);                    // Unauthenticated — public config
 app.use('/v1/plaid/webhooks', webhookRouter);           // Plaid-signed (webhook verification)
 app.use('/v1/telemetry', telemetryRouter);              // Install-ID based (no JWT)
@@ -86,6 +90,22 @@ async function start() {
 
   const server = app.listen(PORT, () => {
     console.log(`HyperFin server running on port ${PORT}`);
+
+    // Startup diagnostics — makes sandbox setup debugging easier
+    const plaidMode = (process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET)
+      ? `sandbox (real credentials, env=${process.env.PLAID_ENV || 'sandbox'})`
+      : 'mock (no PLAID_CLIENT_ID / PLAID_SECRET)';
+    const dbUrl = process.env.DATABASE_URL
+      ? process.env.DATABASE_URL.replace(/:([^@]+)@/, ':***@')
+      : '(not set)';
+    const encKey = process.env.PLAID_TOKEN_ENCRYPTION_KEY ? '✓ configured' : '✗ missing';
+    const webhookUrl = process.env.SERVER_URL || 'http://localhost:3000';
+
+    console.log(`[startup] Plaid mode:       ${plaidMode}`);
+    console.log(`[startup] Database:         ${dbUrl}`);
+    console.log(`[startup] Token encryption: ${encKey}`);
+    console.log(`[startup] Webhook URL:      ${webhookUrl}/v1/plaid/webhooks`);
+    console.log(`[startup] Node env:         ${process.env.NODE_ENV || 'development'}`);
   });
 
   // Graceful shutdown

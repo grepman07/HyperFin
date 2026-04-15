@@ -64,6 +64,16 @@ final class AppDependencies {
         self.keychain = KeychainManager()
         self.installIdProvider = InstallIdProvider(keychain: keychain)
 
+        // Persist refreshed tokens to Keychain so they survive app restarts.
+        let kc = keychain
+        let ac = apiClient
+        Task {
+            await ac.setTokenRefreshCallback { access, refresh in
+                try? kc.saveString(key: "accessToken", value: access)
+                try? kc.saveString(key: "refreshToken", value: refresh)
+            }
+        }
+
         let container = modelContainer
         let installId = installIdProvider.currentInstallId()
         let appVersion = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "dev"

@@ -20,12 +20,20 @@ export function getPool(): Pool {
     // only the certificate-chain check is relaxed, which is appropriate for
     // a DO-internal DB link.
     const connectionString = rawConnectionString.replace(/[?&]sslmode=[^&]*/g, '');
+    // Only enable SSL when running in production or when the connection string
+    // explicitly requests it. Local Postgres (via docker-compose) doesn't
+    // speak SSL and will reject the connection if we force it.
+    const isProduction = process.env.NODE_ENV === 'production';
+    const urlRequestsSSL = rawConnectionString.includes('sslmode=require');
+    const sslConfig = (isProduction || urlRequestsSSL)
+      ? { rejectUnauthorized: false }
+      : false;
     pool = new Pool({
       connectionString,
       max: 10,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
-      ssl: { rejectUnauthorized: false },
+      ssl: sslConfig,
       // Postgres 16 locked down the `public` schema — non-superusers can't
       // CREATE there. We put everything in an app-owned `hyperfin` schema
       // instead (created below in SCHEMA_SQL as the first statement). Setting
@@ -95,6 +103,74 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id);
+
+-- Securities master — one row per unique security (stock/fund/etc). --------
+-- Shared across all users/items; security_id is global in Plaid's model.
+CREATE TABLE IF NOT EXISTS securities (
+  security_id TEXT PRIMARY KEY,
+  ticker_symbol TEXT,
+  name TEXT,
+  type TEXT,
+  iso_currency_code TEXT,
+  close_price NUMERIC,
+  close_price_as_of DATE,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Holdings — current position per (account, security). Refreshed on each
+-- investmentsHoldingsGet; UNIQUE(account_id, security_id) lets us upsert.
+CREATE TABLE IF NOT EXISTS holdings (
+  id SERIAL PRIMARY KEY,
+  item_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  security_id TEXT NOT NULL REFERENCES securities(security_id),
+  quantity NUMERIC NOT NULL,
+  institution_price NUMERIC,
+  institution_value NUMERIC,
+  cost_basis NUMERIC,
+  iso_currency_code TEXT,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(account_id, security_id)
+);
+CREATE INDEX IF NOT EXISTS idx_holdings_item ON holdings(item_id);
+
+-- Investment transactions — buys, sells, dividends, fees, cash moves. Unlike
+-- /transactions/sync this API is date-range paginated; we track the last
+-- synced date on plaid_items (see ALTER below) instead of a cursor.
+CREATE TABLE IF NOT EXISTS investment_transactions (
+  investment_transaction_id TEXT PRIMARY KEY,
+  item_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  security_id TEXT REFERENCES securities(security_id),
+  date DATE NOT NULL,
+  name TEXT,
+  type TEXT,
+  subtype TEXT,
+  quantity NUMERIC,
+  price NUMERIC,
+  fees NUMERIC,
+  amount NUMERIC,
+  iso_currency_code TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_invtx_item_date ON investment_transactions(item_id, date DESC);
+
+-- Liabilities — credit cards, mortgages, student loans. Shapes diverge too
+-- much between kinds to normalise, so we keep a "kind" discriminator plus a
+-- jsonb blob. We never filter inside the payload server-side.
+CREATE TABLE IF NOT EXISTS liabilities (
+  id SERIAL PRIMARY KEY,
+  item_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('credit','mortgage','student')),
+  data JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(account_id, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_liabilities_item ON liabilities(item_id);
+
+-- Track last successful investment-txn sync window end per item so we can
+-- do incremental pulls (date-range paginated, not cursor based).
+ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS investments_last_synced_date DATE;
 
 -- Audit log — immutable append-only ----------------------------------------
 CREATE TABLE IF NOT EXISTS audit_log (

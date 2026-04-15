@@ -36,6 +36,24 @@ struct AccountsView: View {
                                 accountRow(account)
                             }
                         }
+
+                        Section("Wealth & Liabilities") {
+                            NavigationLink {
+                                HoldingsListView()
+                            } label: {
+                                Label("Holdings", systemImage: "chart.line.uptrend.xyaxis")
+                            }
+                            NavigationLink {
+                                InvestmentTransactionsListView()
+                            } label: {
+                                Label("Investment Activity", systemImage: "chart.xyaxis.line")
+                            }
+                            NavigationLink {
+                                LiabilitiesListView()
+                            } label: {
+                                Label("Liabilities", systemImage: "creditcard.and.123")
+                            }
+                        }
                     }
 
                     if let handler = linkHandler {

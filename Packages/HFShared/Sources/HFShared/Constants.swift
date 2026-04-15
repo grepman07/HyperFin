@@ -2,7 +2,21 @@ import Foundation
 
 public enum HFConstants {
     public enum API {
-        public static let baseURL = "https://hyperfin-server-dzlsx.ondigitalocean.app"
+        /// In Debug builds, defaults to localhost for local sandbox testing.
+        /// Override via the `HYPERFIN_API_URL` environment variable in the Xcode
+        /// scheme to point at a different server (e.g. the DO production URL).
+        /// Release builds always use the production URL.
+        public static let baseURL: String = {
+            #if DEBUG
+            if let override = ProcessInfo.processInfo.environment["HYPERFIN_API_URL"],
+               !override.isEmpty {
+                return override
+            }
+            return "https://hyperfin-server-dzlsx.ondigitalocean.app"
+            #else
+            return "https://hyperfin-server-dzlsx.ondigitalocean.app"
+            #endif
+        }()
         public static let apiVersion = "v1"
         public static let timeoutInterval: TimeInterval = 30
         /// Endpoint path (under /<apiVersion>/) for the server-side cloud chat

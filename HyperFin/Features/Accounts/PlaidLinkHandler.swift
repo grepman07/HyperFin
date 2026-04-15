@@ -216,11 +216,179 @@ final class PlaidLinkHandler {
 
             try context.save()
             HFLogger.sync.info("Synced \(response.accounts.count) accounts, \(transactionCount) transactions")
+
+            // Fire-and-forget: also pull investments + liabilities. These are
+            // best-effort — if the institution doesn't support the product,
+            // the server returns 200 with empty data; if something else
+            // breaks, we swallow the error so a successful cash-tx sync
+            // still surfaces to the user as a completed link.
+            Task { await self.syncHoldings() }
+            Task { await self.syncInvestmentTransactions() }
+            Task { await self.syncLiabilities() }
+
             state = .success(accountCount: response.accounts.count)
         } catch {
             state = .error("Failed to sync: \(error.localizedDescription)")
             errorMessage = error.localizedDescription
             HFLogger.sync.error("Sync failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Investments / Liabilities sync
+
+    /// Pull current holdings + their securities into SwiftData. Errors are
+    /// logged but not surfaced — a partial-product-support institution will
+    /// still have a healthy cash-tx sync, and the holdings list view just
+    /// stays empty until the user links a brokerage.
+    private func syncHoldings() async {
+        SecurityAuditLogger.logAccess(action: "plaid_investments_synced", resource: "holdings")
+        do {
+            let response = try await plaidService.fetchHoldings()
+            let context = modelContainer.mainContext
+
+            // Upsert securities first (holdings reference them via securityId)
+            for dto in response.securities {
+                let sid = dto.securityId
+                var fetch = FetchDescriptor<SDSecurity>(predicate: #Predicate { $0.securityId == sid })
+                fetch.fetchLimit = 1
+                if let existing = try context.fetch(fetch).first {
+                    existing.tickerSymbol = dto.tickerSymbol
+                    existing.name = dto.name
+                    existing.type = dto.type
+                    existing.closePrice = dto.closePrice
+                    existing.currencyCode = dto.currencyCode
+                    existing.updatedAt = Date()
+                } else {
+                    let domain = await plaidService.mapToSecurity(dto)
+                    context.insert(SDSecurity(from: domain))
+                }
+            }
+
+            // Replace holdings wholesale — Plaid returns the full snapshot.
+            let existing = try context.fetch(FetchDescriptor<SDHolding>())
+            for h in existing { context.delete(h) }
+            for dto in response.holdings {
+                let domain = await plaidService.mapToHolding(dto)
+                context.insert(SDHolding(from: domain))
+            }
+            try context.save()
+            HFLogger.sync.info("Synced \(response.holdings.count) holdings")
+        } catch {
+            HFLogger.sync.error("Holdings sync skipped: \(error.localizedDescription)")
+        }
+    }
+
+    /// Pull investment transactions for the default 24-month window on first
+    /// link (server-side default). Incremental syncs on subsequent calls are
+    /// handled by the server via `investments_last_synced_date`.
+    private func syncInvestmentTransactions() async {
+        SecurityAuditLogger.logAccess(
+            action: "plaid_investment_transactions_synced",
+            resource: "investment_transactions"
+        )
+        do {
+            let response = try await plaidService.fetchInvestmentTransactions()
+            let context = modelContainer.mainContext
+
+            for dto in response.securities {
+                let sid = dto.securityId
+                var fetch = FetchDescriptor<SDSecurity>(predicate: #Predicate { $0.securityId == sid })
+                fetch.fetchLimit = 1
+                if try context.fetch(fetch).first == nil {
+                    let domain = await plaidService.mapToSecurity(dto)
+                    context.insert(SDSecurity(from: domain))
+                }
+            }
+
+            for dto in response.transactions {
+                let txId = dto.investmentTransactionId
+                var fetch = FetchDescriptor<SDInvestmentTransaction>(
+                    predicate: #Predicate { $0.investmentTransactionId == txId }
+                )
+                fetch.fetchLimit = 1
+                guard try context.fetch(fetch).first == nil else { continue }
+                let domain = await plaidService.mapToInvestmentTransaction(dto)
+                context.insert(SDInvestmentTransaction(from: domain))
+            }
+            try context.save()
+            HFLogger.sync.info("Synced \(response.transactions.count) investment transactions")
+        } catch {
+            HFLogger.sync.error("Investment transactions sync skipped: \(error.localizedDescription)")
+        }
+    }
+
+    /// Pull credit/mortgage/student liability data. We store the raw JSON
+    /// payload per (account, kind) and decode on-demand in the view layer.
+    private func syncLiabilities() async {
+        SecurityAuditLogger.logAccess(action: "plaid_liabilities_synced", resource: "liabilities")
+        do {
+            let response = try await plaidService.fetchLiabilities()
+            let context = modelContainer.mainContext
+
+            // Wholesale replace — Plaid returns the full current state.
+            let existing = try context.fetch(FetchDescriptor<SDLiability>())
+            for l in existing { context.delete(l) }
+
+            // Map DTOs → domain models before persisting so the stored JSON
+            // matches what SDLiability.toLiability() decodes.
+            let encoder = JSONEncoder()
+            for dto in response.credit {
+                let domain = CreditLiability(
+                    accountId: dto.accountId,
+                    lastStatementBalance: dto.lastStatementBalance,
+                    minimumPaymentAmount: dto.minimumPaymentAmount,
+                    nextPaymentDueDate: dto.nextPaymentDueDate,
+                    lastPaymentAmount: dto.lastPaymentAmount,
+                    lastPaymentDate: dto.lastPaymentDate,
+                    purchaseAPR: dto.aprs?.first(where: { $0.aprType == "purchase_apr" })?.aprPercentage
+                        ?? dto.aprs?.first?.aprPercentage,
+                    isOverdue: dto.isOverdue
+                )
+                if let data = try? encoder.encode(domain) {
+                    context.insert(SDLiability(accountId: dto.accountId, kind: "credit", payload: data))
+                }
+            }
+            for dto in response.mortgage {
+                let domain = MortgageLiability(
+                    accountId: dto.accountId,
+                    interestRatePercentage: dto.interestRate?.percentage,
+                    interestRateType: dto.interestRate?.type,
+                    nextPaymentDueDate: dto.nextPaymentDueDate,
+                    nextMonthlyPayment: dto.nextMonthlyPayment,
+                    maturityDate: dto.maturityDate,
+                    originationPrincipalAmount: dto.originationPrincipalAmount,
+                    ytdInterestPaid: dto.ytdInterestPaid,
+                    ytdPrincipalPaid: dto.ytdPrincipalPaid,
+                    pastDueAmount: dto.pastDueAmount
+                )
+                if let data = try? encoder.encode(domain) {
+                    context.insert(SDLiability(accountId: dto.accountId, kind: "mortgage", payload: data))
+                }
+            }
+            for dto in response.student {
+                let domain = StudentLiability(
+                    accountId: dto.accountId,
+                    loanName: dto.loanName,
+                    interestRatePercentage: dto.interestRatePercentage,
+                    minimumPaymentAmount: dto.minimumPaymentAmount,
+                    nextPaymentDueDate: dto.nextPaymentDueDate,
+                    expectedPayoffDate: dto.expectedPayoffDate,
+                    outstandingInterestAmount: dto.outstandingInterestAmount,
+                    originationPrincipalAmount: dto.originationPrincipalAmount,
+                    ytdInterestPaid: dto.ytdInterestPaid,
+                    ytdPrincipalPaid: dto.ytdPrincipalPaid,
+                    loanStatusType: dto.loanStatus?.type
+                )
+                if let data = try? encoder.encode(domain) {
+                    context.insert(SDLiability(accountId: dto.accountId, kind: "student", payload: data))
+                }
+            }
+            try context.save()
+            HFLogger.sync.info(
+                "Synced liabilities: \(response.credit.count) credit, \(response.mortgage.count) mortgage, \(response.student.count) student"
+            )
+        } catch {
+            HFLogger.sync.error("Liabilities sync skipped: \(error.localizedDescription)")
         }
     }
 

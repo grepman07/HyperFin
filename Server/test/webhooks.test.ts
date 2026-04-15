@@ -104,6 +104,30 @@ describe('webhook routes (mock mode)', () => {
     );
   });
 
+  test.each([
+    ['HOLDINGS', 'DEFAULT_UPDATE'],
+    ['INVESTMENTS_TRANSACTIONS', 'DEFAULT_UPDATE'],
+    ['LIABILITIES', 'DEFAULT_UPDATE'],
+  ])('accepts %s/%s webhook and audits it', async (type, code) => {
+    mockQuery.mockResolvedValueOnce({
+      rows: [{ user_id: 'owner-123' }],
+      rowCount: 1,
+    } as any);
+
+    const res = await request(buildApp())
+      .post('/v1/plaid/webhooks')
+      .send({ webhook_type: type, webhook_code: code, item_id: 'inv-1' });
+
+    expect(res.status).toBe(200);
+    expect(mockAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'plaid_webhook_received',
+        resourceId: 'inv-1',
+        detail: { webhook_type: type, webhook_code: code },
+      })
+    );
+  });
+
   test('handles unknown webhook_type without crashing', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [], rowCount: 0 } as any);
     const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});

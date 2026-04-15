@@ -177,6 +177,27 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
         break;
       }
 
+      case 'HOLDINGS': {
+        // HOLDINGS/DEFAULT_UPDATE fires when Plaid has new holdings data for
+        // an investment item. For now we just audit — the iOS client pulls
+        // on demand. A background refresh can land as a follow-up.
+        console.log(`Holdings update for item ${item_id}`);
+        break;
+      }
+
+      case 'INVESTMENTS_TRANSACTIONS': {
+        // INVESTMENTS_TRANSACTIONS/DEFAULT_UPDATE — audit only for now. A
+        // future worker would re-sync from investments_last_synced_date.
+        console.log(`Investment txns update for item ${item_id}`);
+        break;
+      }
+
+      case 'LIABILITIES': {
+        // LIABILITIES/DEFAULT_UPDATE — audit only for now.
+        console.log(`Liabilities update for item ${item_id}`);
+        break;
+      }
+
       case 'ITEM': {
         if (webhook_code === 'ERROR') {
           console.log(

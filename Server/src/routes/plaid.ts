@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { Configuration, PlaidApi, PlaidEnvironments, Products, CountryCode } from 'plaid';
+import { Products, CountryCode } from 'plaid';
 import rateLimit from 'express-rate-limit';
 import { query } from '../services/database';
 import { encryptToken, decryptToken } from '../services/tokenEncryption';
 import { audit, clientIp } from '../services/auditLog';
+import { getPlaidClient, isMockMode } from '../services/plaidClient';
 
 export const plaidRouter = Router();
 
@@ -30,30 +31,6 @@ const transactionLimiter = rateLimit({
 });
 
 // ---------------------------------------------------------------------------
-// Plaid Client Setup (real or mock)
-// ---------------------------------------------------------------------------
-
-const USE_REAL_PLAID = !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
-
-let plaidClient: PlaidApi | null = null;
-
-if (USE_REAL_PLAID) {
-  const configuration = new Configuration({
-    basePath: PlaidEnvironments[process.env.PLAID_ENV || 'sandbox'],
-    baseOptions: {
-      headers: {
-        'PLAID-CLIENT-ID': process.env.PLAID_CLIENT_ID!,
-        'PLAID-SECRET': process.env.PLAID_SECRET!,
-      },
-    },
-  });
-  plaidClient = new PlaidApi(configuration);
-  console.log(`Plaid: Real mode (${process.env.PLAID_ENV || 'sandbox'})`);
-} else {
-  console.log('Plaid: Mock mode (no PLAID_CLIENT_ID set)');
-}
-
-// ---------------------------------------------------------------------------
 // POST /v1/plaid/link-token
 // Requires: requireAuth middleware (applied in index.ts)
 // ---------------------------------------------------------------------------
@@ -61,12 +38,18 @@ if (USE_REAL_PLAID) {
 plaidRouter.post('/link-token', async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
+    const plaidClient = getPlaidClient();
 
-    if (USE_REAL_PLAID && plaidClient) {
+    if (!isMockMode() && plaidClient) {
       const response = await plaidClient.linkTokenCreate({
         user: { client_user_id: userId },
         client_name: 'HyperFin',
+        // `products` is what Plaid requires at link time. Everything else is
+        // declared as `optional_products` so users linking institutions that
+        // lack investments or liabilities coverage can still complete Link —
+        // Plaid will silently skip unsupported products for that item.
         products: [Products.Transactions],
+        optional_products: [Products.Investments, Products.Liabilities],
         country_codes: [CountryCode.Us],
         language: 'en',
         webhook: `${process.env.SERVER_URL || 'http://localhost:3000'}/v1/plaid/webhooks`,
@@ -113,7 +96,8 @@ plaidRouter.post('/exchange', exchangeLimiter, async (req: Request, res: Respons
       return;
     }
 
-    if (USE_REAL_PLAID && plaidClient) {
+    const plaidClient = getPlaidClient();
+    if (!isMockMode() && plaidClient) {
       const exchangeResponse = await plaidClient.itemPublicTokenExchange({
         public_token: publicToken,
       });
@@ -198,8 +182,9 @@ plaidRouter.get('/transactions', transactionLimiter, async (req: Request, res: R
     }
 
     const item = itemResult.rows[0];
+    const plaidClient = getPlaidClient();
 
-    if (USE_REAL_PLAID && plaidClient) {
+    if (!isMockMode() && plaidClient) {
       // Decrypt access token in memory — never logged or persisted in plaintext
       const accessToken = decryptToken(item.access_token_enc);
 
@@ -366,3 +351,64 @@ function generateMockTransactionResponse() {
 
   return { transactions, accounts, hasMore: false };
 }
+
+// ---------------------------------------------------------------------------
+// Sandbox-only: fire a test webhook
+// ---------------------------------------------------------------------------
+// POST /v1/plaid/sandbox/fire-webhook
+// Body: { webhookType: string, webhookCode: string }
+//
+// Calls Plaid's sandboxItemFireWebhook to trigger a webhook for the user's
+// linked item. Only available in non-production environments.
+// ---------------------------------------------------------------------------
+
+plaidRouter.post('/sandbox/fire-webhook', async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not available in production' });
+  }
+
+  const userId = req.user?.userId;
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const plaidClient = getPlaidClient();
+  if (!plaidClient || isMockMode()) {
+    return res.status(400).json({ error: 'Sandbox webhook testing requires real Plaid credentials' });
+  }
+
+  try {
+    const item = await query(
+      'SELECT access_token_enc FROM plaid_items WHERE user_id = $1 LIMIT 1',
+      [userId]
+    );
+    if (item.rows.length === 0) {
+      return res.status(404).json({ error: 'No linked institution found' });
+    }
+
+    const accessToken = decryptToken(item.rows[0].access_token_enc);
+    const { webhookType, webhookCode } = req.body;
+
+    if (!webhookType || !webhookCode) {
+      return res.status(400).json({ error: 'webhookType and webhookCode are required' });
+    }
+
+    const response = await plaidClient.sandboxItemFireWebhook({
+      access_token: accessToken,
+      webhook_type: webhookType,
+      webhook_code: webhookCode,
+    });
+
+    await audit({
+      userId,
+      action: 'sandbox_webhook_fired',
+      resourceType: 'plaid_item',
+      resourceId: 'sandbox',
+      ip: clientIp(req),
+      detail: { webhookType, webhookCode },
+    });
+
+    res.json({ success: true, webhookFired: response.data.webhook_fired });
+  } catch (error: any) {
+    console.error('Sandbox webhook fire failed:', error?.response?.data || error.message);
+    res.status(500).json({ error: 'Failed to fire sandbox webhook' });
+  }
+});

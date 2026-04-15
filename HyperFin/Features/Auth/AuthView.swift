@@ -95,14 +95,16 @@ struct AuthView: View {
             }
             .padding(.bottom, 16)
 
-            // Skip for development
+            #if DEBUG
+            // Quick-login with a test account for sandbox development.
+            // Registers on first use, logs in on subsequent uses.
             Button("Skip (Development)") {
-                saveDevTokens()
-                isAuthenticated = true
+                skipWithTestAccount()
             }
             .font(.caption)
             .foregroundStyle(.secondary)
             .padding(.bottom, 24)
+            #endif
         }
     }
 
@@ -152,8 +154,34 @@ struct AuthView: View {
         }
     }
 
-    private func saveDevTokens() {
-        try? dependencies.keychain.saveString(key: "accessToken", value: "dev-token")
-        try? dependencies.keychain.saveString(key: "refreshToken", value: "dev-refresh")
+    #if DEBUG
+    private func skipWithTestAccount() {
+        isLoading = true
+        errorMessage = nil
+        Task {
+            do {
+                let tokens: AuthTokens
+                do {
+                    tokens = try await dependencies.authService.login(
+                        email: "test@hyperfin.dev",
+                        password: "Sandbox123!"
+                    )
+                } catch {
+                    // First time — register the test account
+                    tokens = try await dependencies.authService.register(
+                        email: "test@hyperfin.dev",
+                        password: "Sandbox123!"
+                    )
+                }
+                try? dependencies.keychain.saveString(key: "accessToken", value: tokens.accessToken)
+                try? dependencies.keychain.saveString(key: "refreshToken", value: tokens.refreshToken)
+                HFLogger.security.info("Dev skip: authenticated as test@hyperfin.dev")
+                isAuthenticated = true
+            } catch {
+                errorMessage = "Dev login failed: \(error.localizedDescription)"
+            }
+            isLoading = false
+        }
     }
+    #endif
 }

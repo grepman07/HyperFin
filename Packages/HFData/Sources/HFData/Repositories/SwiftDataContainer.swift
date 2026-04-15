@@ -15,6 +15,10 @@ public enum SwiftDataContainer {
             SDAlertConfig.self,
             SDUserProfile.self,
             SDTelemetryEvent.self,
+            SDSecurity.self,
+            SDHolding.self,
+            SDInvestmentTransaction.self,
+            SDLiability.self,
         ])
 
         let configuration = ModelConfiguration(

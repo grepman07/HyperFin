@@ -82,14 +82,28 @@ struct LockScreenView: View {
             do {
                 let success = try await dependencies.biometricAuth.authenticate()
                 if success {
+                    await restoreTokensFromKeychain()
                     isAuthenticated = true
                 }
             } catch BiometricError.notAvailable {
                 // No biometrics — auto-authenticate in development
+                await restoreTokensFromKeychain()
                 isAuthenticated = true
             } catch {
                 showError = true
             }
+        }
+    }
+
+    /// Restore saved auth tokens from Keychain into the in-memory APIClient.
+    /// Without this, the APIClient has nil tokens after app relaunch and all
+    /// authenticated requests fail with 401.
+    private func restoreTokensFromKeychain() async {
+        if let access = try? dependencies.keychain.loadString(key: "accessToken"),
+           let refresh = try? dependencies.keychain.loadString(key: "refreshToken"),
+           !access.isEmpty, !refresh.isEmpty {
+            await dependencies.apiClient.setTokens(access: access, refresh: refresh)
+            HFLogger.security.info("Restored auth tokens from Keychain")
         }
     }
 }
