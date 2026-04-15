@@ -26,6 +26,12 @@ export function getPool(): Pool {
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
       ssl: { rejectUnauthorized: false },
+      // Postgres 16 locked down the `public` schema — non-superusers can't
+      // CREATE there. We put everything in an app-owned `hyperfin` schema
+      // instead (created below in SCHEMA_SQL as the first statement). Setting
+      // search_path on every new connection means all unqualified table refs
+      // resolve to our schema without needing to qualify in SQL.
+      options: '-c search_path=hyperfin,public',
     });
     pool.on('error', (err) => {
       console.error('[database] unexpected pool error:', err.message);
@@ -52,6 +58,12 @@ export async function query(text: string, params?: unknown[]): Promise<QueryResu
 // ---------------------------------------------------------------------------
 
 const SCHEMA_SQL = `
+-- Own schema — Postgres 16 revoked default CREATE on `public` for non-owners,
+-- so we create a schema the app's DB user owns. search_path is set at pool
+-- connect time (see getPool) so all unqualified references land here.
+CREATE SCHEMA IF NOT EXISTS hyperfin AUTHORIZATION CURRENT_USER;
+SET search_path TO hyperfin, public;
+
 -- Users -------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
