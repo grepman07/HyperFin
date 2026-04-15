@@ -19,6 +19,48 @@ databases:
     engine: PG
     version: "16"
     production: true
+    cluster_name: hyperfin-db
+# ---------------------------------------------------------------------------
+# App-Level secrets — declared here WITHOUT values so future spec applies
+# don't wipe them. DO's spec-apply is authoritative: any key not present in
+# the spec is deleted from App-Level on update. Declaring with `type: SECRET`
+# and no value preserves the existing App-Level encrypted value. Values are
+# set once via the DO dashboard and rotated there.
+# ---------------------------------------------------------------------------
+envs:
+  - key: JWT_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  - key: JWT_REFRESH_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  - key: PLAID_TOKEN_ENCRYPTION_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: PLAID_CLIENT_ID
+    scope: RUN_TIME
+    type: SECRET
+  - key: PLAID_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  - key: ANTHROPIC_API_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: ADMIN_BEARER_TOKEN
+    scope: RUN_TIME
+    type: SECRET
+  - key: S3_BUCKET
+    scope: RUN_TIME
+    type: SECRET
+  - key: S3_ACCESS_KEY_ID
+    scope: RUN_TIME
+    type: SECRET
+  - key: S3_SECRET_ACCESS_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: S3_ENDPOINT
+    scope: RUN_TIME
+    type: SECRET
 services:
   - name: api
     github:
