@@ -2,10 +2,13 @@ name: hyperfin-server
 # ---------------------------------------------------------------------------
 # Databases
 #
-# `db` is a Dev Database (PostgreSQL 16, $7/mo) — sufficient for the Plaid
-# Development tier (up to 100 live Items) and beta rollout. Before requesting
-# Plaid Production access, migrate this to a Managed PostgreSQL by setting
-# `production: true` (note: this triggers a recreate; dump/restore required).
+# `db` is a Managed PostgreSQL 16 database (production: true, $15/mo basic).
+# We originally tried the $7/mo Dev tier, but DO App Platform provisions dev
+# DBs with a locked-down `db` user that has no CREATE privilege anywhere —
+# schema bootstrap always fails with "permission denied for database db",
+# and doadmin credentials aren't exposed for app-attached dev DBs. Managed
+# tier fixes this (doadmin accessible in dashboard), adds automated backups,
+# and is required for Plaid Production's security review regardless.
 #
 # The DATABASE_URL env var below uses DO App Platform's component-binding
 # syntax (${db.DATABASE_URL}) so the connection string is auto-injected and
@@ -15,7 +18,7 @@ databases:
   - name: db
     engine: PG
     version: "16"
-    production: false
+    production: true
 services:
   - name: api
     github:
