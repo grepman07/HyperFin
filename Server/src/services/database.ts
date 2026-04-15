@@ -113,6 +113,15 @@ CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
 
 export async function initializeDatabase(): Promise<void> {
   try {
+    // Diagnostic: log current user + accessible schemas so we can see what
+    // privileges the auto-provisioned DO App Platform DB user actually has.
+    const diag = await query(
+      `SELECT current_user AS usr, current_database() AS db,
+              (SELECT string_agg(nspname, ',') FROM pg_namespace
+               WHERE has_schema_privilege(current_user, nspname, 'CREATE')) AS creatable_schemas,
+              has_database_privilege(current_user, current_database(), 'CREATE') AS can_create_in_db`
+    );
+    console.log('[database] diagnostic:', diag.rows[0]);
     await query(SCHEMA_SQL);
     console.log('[database] schema initialised');
   } catch (err) {
