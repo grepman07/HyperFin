@@ -9,17 +9,23 @@ let pool: Pool | null = null;
 
 export function getPool(): Pool {
   if (!pool) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) {
+    const rawConnectionString = process.env.DATABASE_URL;
+    if (!rawConnectionString) {
       throw new Error('DATABASE_URL environment variable is not set');
     }
+    // DO's Dev/Managed Postgres uses self-signed certs in the chain. We strip
+    // any `sslmode=...` query param so pg-connection-string doesn't build a
+    // conflicting ssl config, then pass an explicit `ssl` object that disables
+    // CA verification. Connections stay encrypted (TLS still required) —
+    // only the certificate-chain check is relaxed, which is appropriate for
+    // a DO-internal DB link.
+    const connectionString = rawConnectionString.replace(/[?&]sslmode=[^&]*/g, '');
     pool = new Pool({
       connectionString,
       max: 10,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,
-      // DigitalOcean Managed PostgreSQL requires SSL
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined,
+      ssl: { rejectUnauthorized: false },
     });
     pool.on('error', (err) => {
       console.error('[database] unexpected pool error:', err.message);
