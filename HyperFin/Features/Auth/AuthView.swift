@@ -130,7 +130,11 @@ struct AuthView: View {
                     tokens = try await dependencies.authService.register(email: email, password: password)
                 }
 
-                // Save tokens to Keychain
+                // Set tokens on the in-memory APIClient so authenticated
+                // requests work immediately (not just after next app launch).
+                await dependencies.apiClient.setTokens(access: tokens.accessToken, refresh: tokens.refreshToken)
+
+                // Persist to Keychain so they survive app restarts.
                 try dependencies.keychain.saveString(key: "accessToken", value: tokens.accessToken)
                 try dependencies.keychain.saveString(key: "refreshToken", value: tokens.refreshToken)
 
@@ -173,6 +177,7 @@ struct AuthView: View {
                         password: "Sandbox123!"
                     )
                 }
+                await dependencies.apiClient.setTokens(access: tokens.accessToken, refresh: tokens.refreshToken)
                 try? dependencies.keychain.saveString(key: "accessToken", value: tokens.accessToken)
                 try? dependencies.keychain.saveString(key: "refreshToken", value: tokens.refreshToken)
                 HFLogger.security.info("Dev skip: authenticated as test@hyperfin.dev")

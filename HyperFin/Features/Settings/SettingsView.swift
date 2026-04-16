@@ -6,6 +6,7 @@ import HFShared
 import HFIntelligence
 
 struct SettingsView: View {
+    @Environment(AppDependencies.self) private var dependencies
     @Query(sort: \SDTransaction.date, order: .reverse) private var transactions: [SDTransaction]
     @Query(sort: \SDCategory.name) private var categories: [SDCategory]
     @Query(sort: \SDAccount.institutionName) private var accounts: [SDAccount]
@@ -15,6 +16,7 @@ struct SettingsView: View {
     @State private var showExportShare = false
     @State private var exportURL: URL?
     @State private var isExporting = false
+    @State private var showSignOutConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -125,6 +127,14 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Button(role: .destructive) {
+                        showSignOutConfirm = true
+                    } label: {
+                        Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    }
+                }
+
+                Section {
                     HStack {
                         Spacer()
                         Text("HyperFin v1.0.0")
@@ -139,6 +149,28 @@ struct SettingsView: View {
                 if let url = exportURL {
                     ShareSheet(items: [url])
                 }
+            }
+            .confirmationDialog(
+                "Sign out and clear saved credentials?",
+                isPresented: $showSignOutConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Sign Out", role: .destructive) { signOut() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You'll need to sign in again to sync with your bank.")
+            }
+        }
+    }
+
+    private func signOut() {
+        Task {
+            await dependencies.apiClient.clearTokens()
+            try? dependencies.keychain.delete(key: "accessToken")
+            try? dependencies.keychain.delete(key: "refreshToken")
+            HFLogger.security.info("User signed out — Keychain cleared")
+            await MainActor.run {
+                NotificationCenter.default.post(name: .hfAuthFailed, object: nil)
             }
         }
     }

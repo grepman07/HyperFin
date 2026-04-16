@@ -123,10 +123,15 @@ plaidRouter.post('/exchange', exchangeLimiter, async (req: Request, res: Respons
       // Encrypt the access token before persisting
       const encryptedToken = encryptToken(accessToken);
 
+      // Clear any previously linked items for this user — the client UI
+      // models a single active bank link, and keeping stale rows around
+      // causes the `SELECT ... LIMIT 1` in /transactions to return an old
+      // row with a stale cursor (→ empty sync response).
+      await query('DELETE FROM plaid_items WHERE user_id = $1', [userId]);
+
       await query(
         `INSERT INTO plaid_items (user_id, access_token_enc, item_id, institution_name)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT DO NOTHING`,
+         VALUES ($1, $2, $3, $4)`,
         [userId, encryptedToken, itemId, institutionName]
       );
 
@@ -146,6 +151,7 @@ plaidRouter.post('/exchange', exchangeLimiter, async (req: Request, res: Respons
 
       // Even in mock mode, encrypt and persist so the flow is realistic
       const encryptedToken = encryptToken('mock-access-token');
+      await query('DELETE FROM plaid_items WHERE user_id = $1', [userId]);
       await query(
         `INSERT INTO plaid_items (user_id, access_token_enc, item_id, institution_name)
          VALUES ($1, $2, $3, $4)`,
@@ -172,7 +178,7 @@ plaidRouter.get('/transactions', transactionLimiter, async (req: Request, res: R
 
     // Look up user's Plaid items
     const itemResult = await query(
-      'SELECT access_token_enc, item_id, cursor FROM plaid_items WHERE user_id = $1 LIMIT 1',
+      'SELECT access_token_enc, item_id, cursor FROM plaid_items WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
       [userId]
     );
 
@@ -377,7 +383,7 @@ plaidRouter.post('/sandbox/fire-webhook', async (req: Request, res: Response) =>
 
   try {
     const item = await query(
-      'SELECT access_token_enc FROM plaid_items WHERE user_id = $1 LIMIT 1',
+      'SELECT access_token_enc FROM plaid_items WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
       [userId]
     );
     if (item.rows.length === 0) {

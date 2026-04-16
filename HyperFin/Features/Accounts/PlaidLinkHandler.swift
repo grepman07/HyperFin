@@ -110,6 +110,11 @@ final class PlaidLinkHandler {
     }
 
     private func handleLinkSuccess(_ success: LinkSuccess) async {
+        // Dismiss the fullScreenCover immediately so SwiftUI doesn't call
+        // the binding's `set` closure (which used to call dismiss() and
+        // nuke the in-flight state machine).
+        showPlaidLink = false
+
         let publicToken = success.publicToken
         HFLogger.network.info("Plaid Link success, exchanging token...")
         SecurityAuditLogger.logAccess(

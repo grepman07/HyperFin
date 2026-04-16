@@ -7,6 +7,13 @@ import HFData
 import HFNetworking
 import HFIntelligence
 
+extension Notification.Name {
+    /// Posted when the APIClient detects that the stored session tokens are
+    /// no longer valid (refresh failed). RootView listens to this to bounce
+    /// the user back to the login screen.
+    static let hfAuthFailed = Notification.Name("com.hyperfin.authFailed")
+}
+
 /// Composition root — all dependencies are constructed here and injected via constructors.
 @Observable
 final class AppDependencies {
@@ -72,6 +79,16 @@ final class AppDependencies {
                 try? kc.saveString(key: "accessToken", value: access)
                 try? kc.saveString(key: "refreshToken", value: refresh)
             }
+            // When refresh fails (e.g. refresh token expired, or server JWT
+            // secret rotated), clear stale Keychain entries and post a
+            // notification so RootView can bounce to the login screen.
+            await ac.setAuthFailureCallback {
+                try? kc.delete(key: "accessToken")
+                try? kc.delete(key: "refreshToken")
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .hfAuthFailed, object: nil)
+                }
+            }
         }
 
         let container = modelContainer
@@ -133,7 +150,7 @@ final class AppDependencies {
         // — navigating between tabs mid-download would otherwise cancel the
         // parent task and URLSession would surface every retry as
         // URLError.cancelled. See ChatView for the view-side companion which
-        // now only reads status.
+        // now only reads status.`
         let mm = modelManager
         Task.detached {
             let status = await mm.currentStatus

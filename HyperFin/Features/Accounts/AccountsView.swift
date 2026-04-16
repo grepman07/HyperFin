@@ -89,7 +89,7 @@ struct AccountsView: View {
             }
             .fullScreenCover(isPresented: Binding(
                 get: { linkHandler?.showPlaidLink ?? false },
-                set: { _ in linkHandler?.dismiss() }
+                set: { _ in linkHandler?.showPlaidLink = false }
             )) {
                 if let handler = linkHandler?.plaidHandler {
                     PlaidLinkViewController(handler: handler)

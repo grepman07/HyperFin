@@ -43,7 +43,7 @@ liabilitiesRouter.get('/', limiter, async (req: Request, res: Response) => {
     const userId = req.user!.userId;
 
     const itemResult = await query(
-      'SELECT access_token_enc, item_id FROM plaid_items WHERE user_id = $1 LIMIT 1',
+      'SELECT access_token_enc, item_id FROM plaid_items WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1',
       [userId]
     );
 

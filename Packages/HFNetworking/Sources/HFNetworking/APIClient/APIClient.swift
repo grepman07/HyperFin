@@ -22,6 +22,11 @@ public actor APIClient {
     /// the new tokens to Keychain. Set via `setTokenRefreshCallback`.
     private var onTokensRefreshed: (@Sendable (String, String) async -> Void)?
 
+    /// Called when refresh fails (refresh token expired / signature invalid)
+    /// so the app layer can clear Keychain and show the login screen. Set via
+    /// `setAuthFailureCallback`.
+    private var onAuthFailed: (@Sendable () async -> Void)?
+
     /// Guards against multiple concurrent refresh attempts. When true, a
     /// refresh is already in-flight — subsequent 401s wait for it to finish
     /// rather than firing duplicate refresh requests.
@@ -65,6 +70,13 @@ public actor APIClient {
         self.onTokensRefreshed = callback
     }
 
+    /// Register a callback invoked when token refresh fails — the stored
+    /// tokens are no longer valid and the user must re-authenticate. The app
+    /// layer should clear Keychain and show the login screen.
+    public func setAuthFailureCallback(_ callback: @escaping @Sendable () async -> Void) {
+        self.onAuthFailed = callback
+    }
+
     // MARK: - Public request methods
 
     public func request<T: Decodable>(
@@ -77,10 +89,25 @@ public actor APIClient {
         } catch APIError.unauthorized {
             // Don't try to refresh auth endpoints themselves
             guard !path.hasPrefix("auth/") else { throw APIError.unauthorized }
-            guard let refresh = self.refreshToken else { throw APIError.unauthorized }
+            guard let refresh = self.refreshToken else {
+                // No refresh token — session is dead. Notify app layer.
+                await onAuthFailed?()
+                throw APIError.unauthorized
+            }
 
             // Attempt automatic token refresh
-            let newTokens = try await refreshAccessToken(using: refresh)
+            let newTokens: RefreshResponse
+            do {
+                newTokens = try await refreshAccessToken(using: refresh)
+            } catch {
+                // Refresh failed — tokens are no longer valid. Clear them
+                // and notify the app layer so the user is bounced to login.
+                HFLogger.network.error("Token refresh failed — clearing session")
+                self.accessToken = nil
+                self.refreshToken = nil
+                await onAuthFailed?()
+                throw APIError.unauthorized
+            }
             self.accessToken = newTokens.accessToken
             self.refreshToken = newTokens.refreshToken
 

@@ -47,6 +47,10 @@ struct RootView: View {
                 hasCompletedOnboarding = true
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .hfAuthFailed)) { _ in
+            // Server rejected our refresh token — bounce to login.
+            isAuthenticated = false
+        }
         .environment(dependencies)
     }
 
