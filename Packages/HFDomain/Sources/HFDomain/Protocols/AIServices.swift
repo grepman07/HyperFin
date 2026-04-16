@@ -395,12 +395,12 @@ public struct TrendResult: ToolResult, Sendable {
 }
 
 public struct AccountBalanceResult: ToolResult, Sendable {
-    public let accounts: [(name: String, institution: String, balance: Decimal)]
+    public let accounts: [(name: String, type: String, institution: String, balance: Decimal)]
     public let totalBalance: Decimal
 
     public var toolName: String { "account_balance" }
 
-    public init(accounts: [(String, String, Decimal)], totalBalance: Decimal) {
+    public init(accounts: [(String, String, String, Decimal)], totalBalance: Decimal) {
         self.accounts = accounts
         self.totalBalance = totalBalance
     }
@@ -408,7 +408,7 @@ public struct AccountBalanceResult: ToolResult, Sendable {
     public func toJSON() -> String {
         var accs = "["
         accs += accounts
-            .map { "{\"name\":\"\($0.name)\",\"institution\":\"\($0.institution)\",\"balance\":\"\($0.balance.currencyFormatted)\"}" }
+            .map { "{\"name\":\"\($0.name)\",\"type\":\"\($0.type)\",\"institution\":\"\($0.institution)\",\"balance\":\"\($0.balance.currencyFormatted)\"}" }
             .joined(separator: ",")
         accs += "]"
         return "{\"accounts\":\(accs),\"total_balance\":\"\(totalBalance.currencyFormatted)\"}"
@@ -425,7 +425,7 @@ public struct AccountBalanceResult: ToolResult, Sendable {
         }
         var accountList = ""
         for acc in accounts {
-            accountList += "\n- \(acc.name) (\(acc.institution)): \(acc.balance.currencyFormatted)"
+            accountList += "\n- \(acc.name) [\(acc.type)] (\(acc.institution)): \(acc.balance.currencyFormatted)"
         }
         switch tone {
         case .professional:

@@ -70,13 +70,13 @@ struct AccountBalanceTool: Tool {
             }
             let total = filtered.reduce(Decimal.zero) { $0 + $1.currentBalance }
             return AccountBalanceResult(
-                accounts: filtered.map { ($0.accountName, $0.institutionName, $0.currentBalance) },
+                accounts: filtered.map { ($0.accountName, $0.accountType.rawValue, $0.institutionName, $0.currentBalance) },
                 totalBalance: total
             )
         }
         let total = accounts.reduce(Decimal.zero) { $0 + $1.currentBalance }
         return AccountBalanceResult(
-            accounts: accounts.map { ($0.accountName, $0.institutionName, $0.currentBalance) },
+            accounts: accounts.map { ($0.accountName, $0.accountType.rawValue, $0.institutionName, $0.currentBalance) },
             totalBalance: total
         )
     }

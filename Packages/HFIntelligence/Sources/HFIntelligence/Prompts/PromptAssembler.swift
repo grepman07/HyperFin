@@ -206,6 +206,13 @@ public struct PromptAssembler: Sendable {
         Write a natural, conversational reply in full sentences — never output a bare number by itself.
         Only use figures that appear in the data. Never invent or estimate numbers.
         When referring to dollar amounts, copy them exactly as they appear in the data (they already include the $ sign and decimals).
+        Each account has a "type" field. Use it to answer precisely:
+        - "Cash balance" or "liquid cash" = only accounts typed "checking" or "savings".
+        - "Credit" accounts are liabilities (credit cards), not cash.
+        - "Investment" accounts hold securities — not liquid cash.
+        - "Loan" accounts are debts, not assets.
+        - "Net worth" = sum of all account balances (assets minus liabilities).
+        Never sum all accounts and call the result "cash balance." If the user asks about cash, report only checking + savings totals. If they ask about everything, call it "total balance" or "net worth."
         If the data shows $0.00 or 0 transactions, tell the user in a full sentence that you didn't find any matching transactions for that period. Don't just repeat the zero.
         If the data block is empty, the user asked a general finance question — answer briefly and concretely from general knowledge. Never invent user-specific numbers. If the question is about market forecasts, stock recommendations, benchmarks, or retirement projections, say "I don't have that data on device," and suggest a related question the app can answer (spending, balances, budgets, holdings, liabilities, net worth, or investment activity).
         \(toneInstruction)
