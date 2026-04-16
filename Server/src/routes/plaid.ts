@@ -194,21 +194,75 @@ plaidRouter.get('/transactions', transactionLimiter, async (req: Request, res: R
       // Decrypt access token in memory — never logged or persisted in plaintext
       const accessToken = decryptToken(item.access_token_enc);
 
-      const syncCursor = (req.query.since as string) || item.cursor || undefined;
-      const response = await plaidClient.transactionsSync({
-        access_token: accessToken,
-        cursor: syncCursor || undefined,
-      });
+      // transactionsSync is paginated via `has_more`. On freshly linked items
+      // the first call often returns empty `accounts` + `added` with
+      // `has_more: true` while Plaid populates the data. We must loop until
+      // Plaid reports no more pages, otherwise the client receives an empty
+      // initial response and shows "0 accounts linked".
+      //
+      // Additionally, freshly linked items occasionally return
+      // PRODUCT_NOT_READY on the very first call. We retry a couple of times
+      // with a short delay to handle that race.
+      const initialCursor = (req.query.since as string) || item.cursor || undefined;
 
-      // Persist the new cursor for incremental sync
-      if (response.data.next_cursor) {
+      const allAdded: any[] = [];
+      const accountsById = new Map<string, any>();
+      let latestCursor = initialCursor || undefined;
+      let hasMore = true;
+      let retries = 0;
+      const MAX_RETRIES = 3;
+      const MAX_PAGES = 10;
+      let pages = 0;
+
+      while (hasMore && pages < MAX_PAGES) {
+        pages++;
+        try {
+          const response = await plaidClient.transactionsSync({
+            access_token: accessToken,
+            cursor: latestCursor || undefined,
+          });
+
+          for (const t of response.data.added) allAdded.push(t);
+          for (const a of response.data.accounts) accountsById.set(a.account_id, a);
+
+          latestCursor = response.data.next_cursor || latestCursor;
+          hasMore = response.data.has_more;
+        } catch (err: any) {
+          const code = err?.response?.data?.error_code;
+          if (
+            (code === 'PRODUCT_NOT_READY' || code === 'ITEM_NOT_READY') &&
+            retries < MAX_RETRIES
+          ) {
+            retries++;
+            await new Promise((r) => setTimeout(r, 1500));
+            continue;
+          }
+          throw err;
+        }
+      }
+
+      // Persist the final cursor for incremental sync next time.
+      if (latestCursor) {
         await query(
           'UPDATE plaid_items SET cursor = $1 WHERE item_id = $2 AND user_id = $3',
-          [response.data.next_cursor, item.item_id, userId]
+          [latestCursor, item.item_id, userId]
         );
       }
 
-      const transactions = response.data.added.map((t) => ({
+      // Safety net: if transactionsSync returned no accounts yet (fresh item,
+      // data not populated), fall back to accountsGet which is synchronous
+      // and always returns the current account list. This guarantees the
+      // client sees accounts even if transactions take a few seconds more.
+      if (accountsById.size === 0) {
+        try {
+          const acctResp = await plaidClient.accountsGet({ access_token: accessToken });
+          for (const a of acctResp.data.accounts) accountsById.set(a.account_id, a);
+        } catch (err: any) {
+          console.warn('accountsGet fallback failed:', err?.response?.data || err.message);
+        }
+      }
+
+      const transactions = allAdded.map((t) => ({
         transactionId: t.transaction_id,
         accountId: t.account_id,
         amount: t.amount,
@@ -221,7 +275,7 @@ plaidRouter.get('/transactions', transactionLimiter, async (req: Request, res: R
         pending: t.pending,
       }));
 
-      const accounts = response.data.accounts.map((a) => ({
+      const accounts = Array.from(accountsById.values()).map((a) => ({
         accountId: a.account_id,
         name: a.name,
         type: a.type,
@@ -239,10 +293,10 @@ plaidRouter.get('/transactions', transactionLimiter, async (req: Request, res: R
         resourceType: 'plaid_item',
         resourceId: item.item_id,
         ip: clientIp(req),
-        detail: { transactionCount: transactions.length },
+        detail: { transactionCount: transactions.length, pages },
       });
 
-      res.json({ transactions, accounts, hasMore: response.data.has_more });
+      res.json({ transactions, accounts, hasMore: false });
     } else {
       // Mock mode — return realistic sandbox data
       res.json(generateMockTransactionResponse());
