@@ -339,17 +339,16 @@ final class ChatViewModel {
                 )
             }
 
-            // Emit telemetry (no-op if user has not opted in). We read the
-            // intent that ChatEngine actually resolved — which may have come
-            // from the LLM classifier when regex missed — so the telemetry
-            // event is tagged with the real intent rather than re-parsed
-            // "unknown".
-            let resolvedIntent = await engine.lastResolvedIntent()
+            // Emit telemetry (no-op if user has not opted in). With the
+            // tool-calling pipeline, "intent" is represented by the set of
+            // tools the planner chose — join them with "+" so a single
+            // string column on the server can still carry multi-tool turns.
+            let toolNames = await engine.lastToolNames()
             await logTelemetry(
                 query: text,
                 responseId: responseId,
                 latencyMs: Int(Date().timeIntervalSince(start) * 1000),
-                resolvedIntent: resolvedIntent
+                toolNames: toolNames
             )
         } catch {
             updateResponse(responseId: responseId, content: "Something went wrong. Please try again.")
@@ -363,67 +362,36 @@ final class ChatViewModel {
         query: String,
         responseId: UUID,
         latencyMs: Int,
-        resolvedIntent: ChatIntent?
+        toolNames: [String]
     ) async {
         guard let logger = telemetryLogger else { return }
         guard let idx = messages.firstIndex(where: { $0.id == responseId }) else { return }
         let responseText = messages[idx].content
 
-        let (intentStr, category, period) = telemetryFields(for: resolvedIntent ?? .unknown(rawQuery: query))
+        // The "intent" column now carries either the single tool name or
+        // a "+"-joined list for multi-tool plans. Empty plans (greetings,
+        // general advice) log as "none" so they're still distinguishable
+        // from failed classifications in server-side dashboards.
+        let intentStr: String
+        if toolNames.isEmpty {
+            intentStr = "none"
+        } else if toolNames.count == 1 {
+            intentStr = toolNames[0]
+        } else {
+            intentStr = toolNames.joined(separator: "+")
+        }
 
         let eventId = await logger.log(
             queryRaw: query,
             responseRaw: responseText,
             intent: intentStr,
-            category: category,
-            period: period,
+            category: nil,
+            period: nil,
             latencyMs: latencyMs,
             sessionId: sessionId
         )
         if let eventId {
             telemetryEventIds[responseId] = eventId
-        }
-    }
-
-    /// Derive the flat (intent, category, period) tuple from a parsed
-    /// `ChatIntent`. Mirrors the classification labels the server expects.
-    private func telemetryFields(for intent: ChatIntent) -> (String, String?, String?) {
-        switch intent {
-        case .greeting:
-            return ("greeting", nil, nil)
-        case .spendingQuery(let category, let merchant, let period):
-            return ("spending", category ?? merchant, period.serverLabel)
-        case .budgetStatus(let category):
-            return ("budget", category, nil)
-        case .accountBalance:
-            return ("balance", nil, nil)
-        case .trendQuery(let category, _):
-            return ("trend", category, nil)
-        case .anomalyCheck(let category, let period):
-            return ("anomaly", category, period.serverLabel)
-        case .transactionSearch(let merchant, _, _):
-            return ("transaction_search", merchant, nil)
-        case .generalAdvice:
-            return ("advice", nil, nil)
-        case .unknown:
-            return ("unknown", nil, nil)
-        }
-    }
-}
-
-private extension DatePeriod {
-    /// Stable machine-readable label for the server analytics. Uses snake_case
-    /// so it matches the values the classification prompt emits.
-    var serverLabel: String {
-        switch self {
-        case .today: return "today"
-        case .thisWeek: return "this_week"
-        case .thisMonth: return "this_month"
-        case .lastMonth: return "last_month"
-        case .last30Days: return "last_30_days"
-        case .last90Days: return "last_90_days"
-        case .lastNMonths(let n): return "last_\(n)_months"
-        case .custom: return "custom"
         }
     }
 }

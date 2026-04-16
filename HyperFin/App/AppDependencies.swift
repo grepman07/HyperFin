@@ -25,6 +25,12 @@ final class AppDependencies {
     let categoryRepo: SwiftDataCategoryRepository
     let telemetryRepo: SwiftDataTelemetryEventRepository
 
+    // Wealth repositories (read-only; writes happen in PlaidLinkHandler)
+    let holdingRepo: SwiftDataHoldingRepository
+    let securityRepo: SwiftDataSecurityRepository
+    let investmentTxnRepo: SwiftDataInvestmentTransactionRepository
+    let liabilityRepo: SwiftDataLiabilityRepository
+
     // Networking
     let apiClient: APIClient
     let authService: AuthService
@@ -35,6 +41,7 @@ final class AppDependencies {
     let modelManager: ModelManager
     let inferenceEngine: InferenceEngine
     let cloudInferenceEngine: CloudInferenceEngine
+    let toolRegistry: ToolRegistry
     let chatEngine: ChatEngine
 
     // Security
@@ -58,6 +65,10 @@ final class AppDependencies {
         self.transactionRepo = SwiftDataTransactionRepository(container: modelContainer)
         self.categoryRepo = SwiftDataCategoryRepository(container: modelContainer)
         self.telemetryRepo = SwiftDataTelemetryEventRepository(container: modelContainer)
+        self.holdingRepo = SwiftDataHoldingRepository(container: modelContainer)
+        self.securityRepo = SwiftDataSecurityRepository(container: modelContainer)
+        self.investmentTxnRepo = SwiftDataInvestmentTransactionRepository(container: modelContainer)
+        self.liabilityRepo = SwiftDataLiabilityRepository(container: modelContainer)
 
         // Networking
         self.apiClient = APIClient()
@@ -103,9 +114,14 @@ final class AppDependencies {
             apiClient: apiClient,
             installId: installId
         )
+        // ToolRegistry owns the catalog of tools the planner can call. It
+        // needs the repo graph, which SwiftData produces synchronously — so
+        // registry construction happens inline and repos are wired below.
+        self.toolRegistry = ToolRegistry()
         self.chatEngine = ChatEngine(
             inferenceEngine: inferenceEngine,
             modelManager: modelManager,
+            registry: toolRegistry,
             cloudEngine: cloudInferenceEngine
         )
 
@@ -123,19 +139,30 @@ final class AppDependencies {
             }
         )
 
-        // Wire ChatEngine with repositories
-        let engine = chatEngine
+        // Wire the tool registry with the full repo graph. The registry
+        // is what the ToolPlanner will drive — ChatEngine doesn't hold
+        // repos itself anymore, it delegates to the registry per-call.
+        let registry = toolRegistry
         let aRepo = accountRepo
         let tRepo = transactionRepo
         let cRepo = categoryRepo
         let budgetRepo = SwiftDataBudgetRepository(container: modelContainer)
+        let hRepo = holdingRepo
+        let sRepo = securityRepo
+        let iRepo = investmentTxnRepo
+        let lRepo = liabilityRepo
         Task { @MainActor in
-            await engine.setRepositories(
+            let repos = ToolRepos(
                 transactions: tRepo,
                 categories: cRepo,
                 accounts: aRepo,
-                budgets: budgetRepo
+                budgets: budgetRepo,
+                holdings: hRepo,
+                securities: sRepo,
+                investmentTransactions: iRepo,
+                liabilities: lRepo
             )
+            await registry.setRepos(repos)
         }
 
         // Seed sample data for testing on first launch

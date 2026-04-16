@@ -2,57 +2,58 @@ import Foundation
 import HFDomain
 import HFShared
 
+// MARK: - ChatEngine
+//
+// The chat pipeline is now a tool-calling loop:
+//
+//     Plan (LLM)  →  Execute (parallel)  →  Synthesize (LLM, streaming)
+//
+// - Plan: `ToolPlanner` prompts the model with the tool catalog + user
+//   query; output is a list of `ToolCall`s.
+// - Execute: `ToolRegistry` runs each call. Independent calls are fanned
+//   out with `withThrowingTaskGroup` so a multi-tool plan doesn't block
+//   on sequential SwiftData reads.
+// - Synthesize: the model streams a natural-language reply grounded in
+//   the aggregated tool outputs. Cloud engine is used when the user has
+//   opted in; local model is used otherwise; if neither is available the
+//   engine falls back to concatenating the tools' own `templateResponse`.
+//
+// The previous pipeline's regex IntentParser + closed-set IntentClassifier
+// + switch-per-intent ToolDispatcher are gone — all replaced by this one
+// loop plus the catalog-driven prompt.
+
 public actor ChatEngine {
     private let inferenceEngine: InferenceEngine
     private let cloudEngine: CloudInferenceEngine?
     private let modelManager: ModelManager
-    private let intentParser: IntentParser
-    private let intentClassifier: IntentClassifier
+    private let registry: ToolRegistry
+    private let planner: ToolPlanner
     private let promptAssembler: PromptAssembler
-    private let toolDispatcher: ToolDispatcher
 
-    /// Multi-turn slot context — persists across messages
+    /// Per-conversation slot state carried from one turn to the next.
+    /// The planner prompt references these as "Previous topic/merchant/period"
+    /// so follow-ups like "what about last month?" still work.
     private var conversationSlots = ConversationSlot()
 
-    /// The most recently resolved intent from either the regex fast-path or
-    /// the LLM classifier. Exposed via `lastResolvedIntent()` so the chat view
-    /// can tag telemetry events with the actual classified intent instead of
-    /// re-running regex locally (which would miss LLM-only matches).
-    private var _lastResolvedIntent: ChatIntent?
+    /// Names of tools executed on the most recent turn. Exposed to the view
+    /// model for telemetry tagging. Empty when the turn was a greeting /
+    /// general-advice reply with no tools.
+    private var _lastToolNames: [String] = []
 
-    public func lastResolvedIntent() -> ChatIntent? {
-        _lastResolvedIntent
-    }
-
-    private var transactionRepo: TransactionRepository?
-    private var categoryRepo: CategoryRepository?
-    private var accountRepo: AccountRepository?
-    private var budgetRepo: BudgetRepository?
+    public func lastToolNames() -> [String] { _lastToolNames }
 
     public init(
         inferenceEngine: InferenceEngine,
         modelManager: ModelManager,
+        registry: ToolRegistry,
         cloudEngine: CloudInferenceEngine? = nil
     ) {
         self.inferenceEngine = inferenceEngine
         self.cloudEngine = cloudEngine
         self.modelManager = modelManager
-        self.intentParser = IntentParser()
+        self.registry = registry
+        self.planner = ToolPlanner()
         self.promptAssembler = PromptAssembler()
-        self.intentClassifier = IntentClassifier()
-        self.toolDispatcher = ToolDispatcher()
-    }
-
-    public func setRepositories(
-        transactions: TransactionRepository,
-        categories: CategoryRepository,
-        accounts: AccountRepository,
-        budgets: BudgetRepository
-    ) {
-        self.transactionRepo = transactions
-        self.categoryRepo = categories
-        self.accountRepo = accounts
-        self.budgetRepo = budgets
     }
 
     public var isModelAvailable: Bool {
@@ -67,116 +68,41 @@ public actor ChatEngine {
         try await modelManager.loadModel()
     }
 
-    // MARK: - Hybrid Agentic Flow
+    // MARK: - Entry point
 
     public func sendMessage(_ text: String, context: ChatContext) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
-                    // Reset per-turn so the caller can't accidentally re-read
-                    // an intent from the previous turn while this one runs.
-                    self._lastResolvedIntent = nil
+                    self._lastToolNames = []
 
-                    // Layer 1a: Regex fast-path
-                    let regexIntent = self.intentParser.parse(text)
-                    HFLogger.ai.info("Regex intent: \(String(describing: regexIntent))")
-
-                    let resolvedIntent: ChatIntent
-
-                    if case .unknown = regexIntent {
-                        // Layer 1b: LLM classification (only when regex fails)
-                        if await self.modelManager.isLoaded {
-                            resolvedIntent = await self.classifyWithLLM(
-                                text: text,
-                                continuation: continuation
-                            )
-                            // If classification triggered a clarification, it already
-                            // yielded the question and finished the stream
-                            guard resolvedIntent != .greeting || !self.conversationSlots.pendingClarification else {
-                                return
-                            }
-                            if self.conversationSlots.pendingClarification {
-                                return
-                            }
-                        } else {
-                            resolvedIntent = .unknown(rawQuery: text)
-                        }
-                    } else {
-                        resolvedIntent = regexIntent
-                        self.conversationSlots.updateFromRegex(regexIntent)
-                    }
-
-                    self._lastResolvedIntent = resolvedIntent
-
-                    // Layer 2: Deterministic tool execution
-                    guard let transactionRepo = self.transactionRepo,
-                          let categoryRepo = self.categoryRepo,
-                          let accountRepo = self.accountRepo,
-                          let budgetRepo = self.budgetRepo else {
-                        continuation.yield("I'm having trouble accessing your data. Please try again.")
-                        continuation.finish()
-                        return
-                    }
-
-                    let toolResult = try await self.toolDispatcher.dispatch(
-                        intent: resolvedIntent,
-                        transactionRepo: transactionRepo,
-                        categoryRepo: categoryRepo,
-                        accountRepo: accountRepo,
-                        budgetRepo: budgetRepo
+                    // 1. PLAN
+                    let modelLoaded = await self.modelManager.isLoaded
+                    let plan = await self.planner.plan(
+                        query: text,
+                        slots: self.conversationSlots,
+                        registry: self.registry,
+                        inferenceEngine: self.inferenceEngine,
+                        modelLoaded: modelLoaded
                     )
+                    HFLogger.ai.info("Plan[\(plan.source.rawValue)]: \(plan.calls.map(\.name).joined(separator: ","))")
 
-                    HFLogger.ai.info("Tool \(toolResult.toolName) returned result")
+                    // 2. EXECUTE (parallel)
+                    let results = try await self.executeAll(plan.calls)
+                    self._lastToolNames = results.map { $0.toolName }
 
-                    // Layer 3: Response generation
-                    // Routing: if the user opted into cloud chat AND a cloud engine
-                    // is wired up, use it. Otherwise use the local model if loaded,
-                    // and finally fall back to a deterministic template response.
-                    let cloudOptIn = context.userProfile?.cloudChatOptIn ?? false
-                    let tone = context.userProfile?.chatTone ?? .professional
-                    let messages = self.promptAssembler.assembleFromToolResult(
+                    // 3. SYNTHESIZE
+                    try await self.synthesize(
                         userQuery: text,
-                        toolResult: toolResult,
-                        conversationHistory: context.recentMessages,
-                        tone: tone
+                        toolResults: results,
+                        plan: plan,
+                        context: context,
+                        continuation: continuation
                     )
 
-                    // Local path uses structured messages so applyChatTemplate
-                    // applies the model's ChatML format exactly once (no double-wrap).
-                    let localRequest = InferenceRequest(messages: messages)
-
-                    // Cloud path uses the flattened prompt string since the server
-                    // handles its own message formatting via the Anthropic SDK.
-                    let cloudRequest = InferenceRequest(prompt: localRequest.prompt)
-
-                    if cloudOptIn, let cloudEngine = self.cloudEngine {
-                        HFLogger.ai.info("Response generation: cloud (opted in)")
-                        do {
-                            for try await token in await cloudEngine.generate(cloudRequest) {
-                                continuation.yield(token)
-                            }
-                        } catch {
-                            // Graceful fallback: if the cloud call fails (network
-                            // down, rate-limited, server 500), fall back to the
-                            // local model if available, then to the template.
-                            HFLogger.cloudChat.error("Cloud response failed, falling back: \(String(describing: error))")
-                            if await self.modelManager.isLoaded {
-                                for try await token in await self.inferenceEngine.generate(localRequest) {
-                                    continuation.yield(token)
-                                }
-                            } else {
-                                continuation.yield(toolResult.templateResponse(tone: tone))
-                            }
-                        }
-                    } else if await self.modelManager.isLoaded {
-                        HFLogger.ai.info("Response generation: local model")
-                        for try await token in await self.inferenceEngine.generate(localRequest) {
-                            continuation.yield(token)
-                        }
-                    } else {
-                        HFLogger.ai.info("Response generation: template fallback")
-                        continuation.yield(toolResult.templateResponse(tone: tone))
-                    }
+                    // Update slot state with whatever the planner extracted
+                    // (first call wins for each slot) so follow-ups carry it.
+                    self.absorbSlotsFrom(plan: plan)
 
                     continuation.finish()
                 } catch {
@@ -187,107 +113,193 @@ public actor ChatEngine {
         }
     }
 
-    // MARK: - LLM Intent Classification
+    // MARK: - Execute (parallel tool run)
 
-    /// Uses the on-device model to classify ambiguous queries.
-    /// Returns the resolved ChatIntent, or yields a clarification question and returns a sentinel.
-    private func classifyWithLLM(
-        text: String,
+    /// Fan out all tool calls in parallel and collect their results in the
+    /// original order. Individual tool failures are logged and dropped so
+    /// one broken tool doesn't sink the whole turn — if every tool fails,
+    /// synthesize() will notice the empty result list and route to a
+    /// general-advice reply.
+    private func executeAll(_ calls: [ToolCall]) async throws -> [any ToolResult] {
+        guard !calls.isEmpty else { return [] }
+
+        // Keep (index, result) so we can restore the order the planner
+        // emitted — important when two tools both affect the prose (e.g.
+        // net_worth + spending_summary — netting first reads better).
+        return try await withThrowingTaskGroup(of: (Int, (any ToolResult)?).self) { group in
+            for (idx, call) in calls.enumerated() {
+                let registry = self.registry
+                group.addTask {
+                    do {
+                        let result = try await registry.execute(call)
+                        return (idx, result)
+                    } catch {
+                        HFLogger.ai.warning("Tool '\(call.name)' failed: \(error.localizedDescription)")
+                        return (idx, nil)
+                    }
+                }
+            }
+
+            var collected: [(Int, any ToolResult)] = []
+            for try await (idx, result) in group {
+                if let result { collected.append((idx, result)) }
+            }
+            collected.sort { $0.0 < $1.0 }
+            return collected.map { $0.1 }
+        }
+    }
+
+    // MARK: - Synthesize
+
+    private func synthesize(
+        userQuery: String,
+        toolResults: [any ToolResult],
+        plan: ToolPlanner.Plan,
+        context: ChatContext,
         continuation: AsyncThrowingStream<String, Error>.Continuation
-    ) async -> ChatIntent {
-        do {
-            let classification = try await intentClassifier.classify(
-                query: text,
-                slots: conversationSlots,
-                inferenceEngine: inferenceEngine
-            )
+    ) async throws {
+        let cloudOptIn = context.userProfile?.cloudChatOptIn ?? false
+        let tone = context.userProfile?.chatTone ?? .professional
 
-            HFLogger.ai.info("LLM classified: \(classification.intent), clarify=\(classification.needsClarification)")
+        // Out-of-scope queries never reach the LLM. The planner explicitly
+        // classified this as "data we don't have on device" — let the model
+        // loose on it and it will happily invent an answer, so we emit a
+        // canned, tone-aware decline instead. Cheaper, more reliable, and
+        // the one place hallucination risk is most dangerous (users take
+        // "your retirement target is $X" as authoritative).
+        if plan.source == .unsupported {
+            HFLogger.ai.info("Synthesis: unsupported (canned reply)")
+            continuation.yield(Self.unsupportedReply(tone: tone))
+            return
+        }
 
-            if classification.needsClarification,
-               let question = classification.clarification {
-                conversationSlots.update(from: classification)
-                continuation.yield(question)
-                continuation.finish()
-                return .greeting // sentinel — caller checks pendingClarification
+        // Build the synthesis prompt regardless of which engine we use —
+        // the messages are identical; only the transport differs.
+        let messages = promptAssembler.assembleSynthesisPrompt(
+            userQuery: userQuery,
+            toolResults: toolResults,
+            conversationHistory: context.recentMessages,
+            tone: tone
+        )
+        let localRequest = InferenceRequest(messages: messages)
+        let cloudRequest = InferenceRequest(prompt: localRequest.prompt)
+
+        // Cloud path.
+        if cloudOptIn, let cloudEngine = self.cloudEngine {
+            HFLogger.ai.info("Synthesis: cloud (opted in)")
+            do {
+                for try await token in await cloudEngine.generate(cloudRequest) {
+                    continuation.yield(token)
+                }
+                return
+            } catch {
+                HFLogger.cloudChat.error("Cloud synthesis failed, falling back: \(String(describing: error))")
+                // fall through
             }
+        }
 
-            let intent = resolveIntent(from: classification)
-            conversationSlots.update(from: classification)
-            return intent
-        } catch {
-            HFLogger.ai.warning("LLM classification failed: \(error), falling back to advice")
-            return .generalAdvice(topic: text)
+        // Local path.
+        if await modelManager.isLoaded {
+            HFLogger.ai.info("Synthesis: local model")
+            for try await token in await inferenceEngine.generate(localRequest) {
+                continuation.yield(token)
+            }
+            return
+        }
+
+        // Template fallback — no model available. Concatenate each tool's
+        // own template response. If the plan was empty (e.g. greeting), use
+        // a generic copy message.
+        HFLogger.ai.info("Synthesis: template fallback")
+        if toolResults.isEmpty {
+            continuation.yield(Self.defaultTemplateReply(for: userQuery, tone: tone))
+        } else {
+            let parts = toolResults.map { $0.templateResponse(tone: tone) }
+            continuation.yield(parts.joined(separator: "\n\n"))
         }
     }
 
-    // MARK: - Classification → ChatIntent Resolution
+    /// Tone-aware canned reply for `.unsupported` plans — queries the app
+    /// explicitly cannot answer from on-device data (market forecasts, stock
+    /// picks, retirement projections, benchmarks). Emitted without calling
+    /// the model: cheaper, zero hallucination risk, and a predictable honest
+    /// decline is the right product behavior here.
+    private static func unsupportedReply(tone: ChatTone) -> String {
+        let capabilities = "I can help with spending, balances, budgets, holdings, liabilities, net worth, and investment activity."
+        switch tone {
+        case .professional:
+            return "That's outside what I can answer from your on-device data. \(capabilities)"
+        case .friendly:
+            return "That one's outside what I can see from your accounts. \(capabilities)"
+        case .funny:
+            return "Crystal ball's in the shop — I can't forecast markets or pick stocks. \(capabilities)"
+        case .strict:
+            return "I don't answer questions outside your on-device data. \(capabilities)"
+        }
+    }
 
-    private func resolveIntent(from result: ClassificationResult) -> ChatIntent {
-        let period = resolvePeriod(result.period)
+    private static func defaultTemplateReply(for query: String, tone: ChatTone) -> String {
+        let lower = query.lowercased()
+        if ["hi", "hello", "hey"].contains(where: { lower.hasPrefix($0) }) {
+            switch tone {
+            case .professional: return "Hello. How can I help you with your finances today?"
+            case .friendly: return "Hey! How can I help with your finances today?"
+            case .funny: return "Well hello there! Ready to make your money beg for mercy?"
+            case .strict: return "Hello. State your finance question and I will respond."
+            }
+        }
+        return "I can help with spending, budgets, balances, trends, holdings, liabilities, net worth, and investment activity. Try asking \"what's my net worth\" or \"how much did I spend on groceries\"."
+    }
 
-        switch result.intent {
-        case "spending":
-            return .spendingQuery(
-                category: result.category ?? conversationSlots.lastCategory,
-                merchant: result.merchant ?? conversationSlots.lastMerchant,
-                period: period
-            )
-        case "budget":
-            return .budgetStatus(category: result.category ?? conversationSlots.lastCategory)
-        case "balance":
-            return .accountBalance(accountName: result.merchant)
-        case "trend":
-            let months = extractMonths(from: result.period) ?? 3
-            return .trendQuery(
-                category: result.category ?? conversationSlots.lastCategory,
-                months: months
-            )
-        case "anomaly":
-            return .anomalyCheck(
-                category: result.category ?? conversationSlots.lastCategory,
-                period: period
-            )
+    // MARK: - Slot tracking
+
+    /// Record any category/merchant/period the planner used so follow-up
+    /// turns like "what about last month?" pick them up. First call wins —
+    /// when multiple tools fire, we trust whatever the primary intent was.
+    private func absorbSlotsFrom(plan: ToolPlanner.Plan) {
+        // Empty plan => greeting-like; clear slots so the next turn starts
+        // fresh rather than re-using stale context from before the chit-chat.
+        guard let first = plan.calls.first else {
+            if plan.source == .empty { conversationSlots.clear() }
+            return
+        }
+
+        switch first.name {
+        case "spending_summary":
+            if let cat = first.args.string("category") { conversationSlots.lastCategory = cat }
+            if let merchant = first.args.string("merchant") { conversationSlots.lastMerchant = merchant }
+            conversationSlots.lastPeriod = first.args.period("period", defaultTo: .thisMonth)
+            conversationSlots.lastIntent = "spending"
+        case "budget_status":
+            if let cat = first.args.string("category") { conversationSlots.lastCategory = cat }
+            conversationSlots.lastIntent = "budget"
+        case "account_balance":
+            conversationSlots.lastIntent = "balance"
         case "transaction_search":
-            return .transactionSearch(
-                merchant: result.merchant ?? conversationSlots.lastMerchant,
-                minAmount: nil,
-                maxAmount: nil
-            )
-        case "advice":
-            return .generalAdvice(topic: result.category ?? "general")
-        case "greeting":
-            conversationSlots.clear()
-            return .greeting
+            if let m = first.args.string("merchant") { conversationSlots.lastMerchant = m }
+            conversationSlots.lastIntent = "transaction_search"
+        case "spending_trend":
+            if let cat = first.args.string("category") { conversationSlots.lastCategory = cat }
+            conversationSlots.lastIntent = "trend"
+        case "spending_anomaly":
+            if let cat = first.args.string("category") { conversationSlots.lastCategory = cat }
+            conversationSlots.lastPeriod = first.args.period("period", defaultTo: .thisMonth)
+            conversationSlots.lastIntent = "anomaly"
+        case "holdings_summary":
+            if let t = first.args.string("ticker") { conversationSlots.lastMerchant = t }
+            conversationSlots.lastIntent = "holdings"
+        case "liability_report":
+            if let k = first.args.string("kind") { conversationSlots.lastCategory = k }
+            conversationSlots.lastIntent = "liabilities"
+        case "net_worth":
+            conversationSlots.lastIntent = "net_worth"
+        case "investment_activity":
+            if let t = first.args.string("activity_type") { conversationSlots.lastCategory = t }
+            conversationSlots.lastPeriod = first.args.period("period", defaultTo: .lastNMonths(3))
+            conversationSlots.lastIntent = "investment_activity"
         default:
-            return .generalAdvice(topic: result.intent)
+            break
         }
-    }
-
-    private func resolvePeriod(_ raw: String?) -> DatePeriod {
-        guard let raw else {
-            return conversationSlots.lastPeriod ?? .thisMonth
-        }
-        switch raw {
-        case "today": return .today
-        case "this_week": return .thisWeek
-        case "this_month": return .thisMonth
-        case "last_month": return .lastMonth
-        case "last_30_days": return .last30Days
-        case "last_90_days": return .last90Days
-        default:
-            if raw.hasPrefix("last_"), raw.hasSuffix("_months") {
-                let middle = raw.dropFirst(5).dropLast(7)
-                if let n = Int(middle) { return .lastNMonths(n) }
-            }
-            return conversationSlots.lastPeriod ?? .thisMonth
-        }
-    }
-
-    private func extractMonths(from period: String?) -> Int? {
-        guard let period, period.hasPrefix("last_"), period.hasSuffix("_months") else {
-            return nil
-        }
-        return Int(period.dropFirst(5).dropLast(7))
+        conversationSlots.pendingClarification = false
     }
 }

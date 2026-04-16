@@ -44,6 +44,27 @@ public enum ChatIntent: Sendable, Equatable {
     case generalAdvice(topic: String)
     case greeting
     case unknown(rawQuery: String)
+
+    // MARK: - Wealth intents
+    //
+    // These answer questions about invested positions, loans/credit lines,
+    // dividends/trades, and the combined "how rich am I" view. All are
+    // read-only against the sync'd Plaid data on device.
+
+    /// "What are my holdings?", "How much AAPL do I own?"
+    /// `ticker` is an optional filter — ticker symbol or security name fragment.
+    case holdingsQuery(ticker: String?)
+
+    /// "What do I owe?", "Credit card balance?", "Mortgage?"
+    /// `kind` is one of "credit" / "mortgage" / "student" or nil for all.
+    case liabilityReport(kind: String?)
+
+    /// "What's my net worth?" — cash accounts + holdings − liabilities.
+    case netWorth
+
+    /// "What dividends did I earn?", "Recent trades", "Investment fees".
+    /// `activityType` filters to `dividend` / `buy` / `sell` / `fee` or nil.
+    case investmentActivity(activityType: String?, period: DatePeriod)
 }
 
 // MARK: - Date Period
@@ -473,6 +494,509 @@ public struct TransactionSearchResult: ToolResult, Sendable {
     }
 }
 
+// MARK: - Row-level retrieval results
+
+/// One row returned by `list_transactions`. The date is pre-formatted so
+/// the LLM copies it verbatim; amount stays Decimal so `currencyFormatted`
+/// renders it identically to every other tool result.
+public struct TransactionListRow: Sendable {
+    public let date: String
+    public let merchant: String
+    public let amount: Decimal
+    public let categoryName: String?
+
+    public init(date: String, merchant: String, amount: Decimal, categoryName: String?) {
+        self.date = date
+        self.merchant = merchant
+        self.amount = amount
+        self.categoryName = categoryName
+    }
+}
+
+public struct TransactionListResult: ToolResult, Sendable {
+    public let rows: [TransactionListRow]
+    public let total: Decimal
+    /// Total number of matching transactions BEFORE truncation by `limit`.
+    /// `rows.count` may be smaller; `truncated == true` when it is.
+    public let count: Int
+    public let periodLabel: String
+    public let categoryLabel: String?
+    public let merchantFilter: String?
+    public let minAmount: Decimal?
+    public let maxAmount: Decimal?
+    public let limit: Int
+    public let truncated: Bool
+
+    public var toolName: String { "list_transactions" }
+
+    public init(
+        rows: [TransactionListRow],
+        total: Decimal,
+        count: Int,
+        periodLabel: String,
+        categoryLabel: String?,
+        merchantFilter: String?,
+        minAmount: Decimal?,
+        maxAmount: Decimal?,
+        limit: Int,
+        truncated: Bool
+    ) {
+        self.rows = rows
+        self.total = total
+        self.count = count
+        self.periodLabel = periodLabel
+        self.categoryLabel = categoryLabel
+        self.merchantFilter = merchantFilter
+        self.minAmount = minAmount
+        self.maxAmount = maxAmount
+        self.limit = limit
+        self.truncated = truncated
+    }
+
+    public func toJSON() -> String {
+        var rowsJSON = "["
+        rowsJSON += rows.map { r in
+            let cat = r.categoryName.map { "\"\($0)\"" } ?? "null"
+            return "{\"date\":\"\(r.date)\",\"merchant\":\"\(r.merchant)\",\"amount\":\"\(r.amount.currencyFormatted)\",\"category\":\(cat)}"
+        }.joined(separator: ",")
+        rowsJSON += "]"
+        let cat = categoryLabel.map { "\"\($0)\"" } ?? "null"
+        let merchant = merchantFilter.map { "\"\($0)\"" } ?? "null"
+        let minStr = minAmount.map { "\"\($0.currencyFormatted)\"" } ?? "null"
+        let maxStr = maxAmount.map { "\"\($0.currencyFormatted)\"" } ?? "null"
+        return "{\"rows\":\(rowsJSON),\"total\":\"\(total.currencyFormatted)\",\"count\":\(count),\"period\":\"\(periodLabel)\",\"category\":\(cat),\"merchant\":\(merchant),\"min_amount\":\(minStr),\"max_amount\":\(maxStr),\"truncated\":\(truncated)}"
+    }
+
+    public func templateResponse(tone: ChatTone) -> String {
+        let filterLabel = describeFilters()
+        if rows.isEmpty {
+            switch tone {
+            case .professional: return "No transactions found matching \(filterLabel)."
+            case .friendly: return "I couldn't find any transactions matching \(filterLabel). Try widening the filters?"
+            case .funny: return "Zero matches for \(filterLabel) — your money stayed on the bench!"
+            case .strict: return "No transactions matched \(filterLabel). Adjust filters and retry."
+            }
+        }
+        let txnWord = count == 1 ? "transaction" : "transactions"
+        var list = ""
+        for r in rows {
+            let cat = r.categoryName.map { " · \($0)" } ?? ""
+            list += "\n- \(r.date) — \(r.merchant): \(r.amount.currencyFormatted)\(cat)"
+        }
+        let truncatedSuffix = truncated ? "\n\n(showing first \(rows.count) of \(count))" : ""
+        switch tone {
+        case .professional:
+            return "Found \(count) \(txnWord) matching \(filterLabel), totaling \(total.currencyFormatted):\(list)\(truncatedSuffix)"
+        case .friendly:
+            return "Here you go — \(count) \(txnWord) matching \(filterLabel) (total: \(total.currencyFormatted)):\(list)\(truncatedSuffix)"
+        case .funny:
+            return "Rounded up \(count) suspects matching \(filterLabel). Total damage: \(total.currencyFormatted).\(list)\(truncatedSuffix)"
+        case .strict:
+            return "\(count) \(txnWord) match \(filterLabel). Total: \(total.currencyFormatted).\(list)\(truncatedSuffix)"
+        }
+    }
+
+    private func describeFilters() -> String {
+        var parts: [String] = []
+        if let c = categoryLabel { parts.append(c) }
+        if let m = merchantFilter { parts.append("\"\(m)\"") }
+        if let minA = minAmount, let maxA = maxAmount {
+            parts.append("\(minA.currencyFormatted)–\(maxA.currencyFormatted)")
+        } else if let minA = minAmount {
+            parts.append("over \(minA.currencyFormatted)")
+        } else if let maxA = maxAmount {
+            parts.append("under \(maxA.currencyFormatted)")
+        }
+        parts.append(periodLabel)
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// One row returned by `list_investment_transactions`.
+public struct InvestmentTransactionRow: Sendable {
+    public let date: String
+    public let ticker: String?
+    /// The Plaid subtype (dividend, buy, sell, …) falling back to the broader
+    /// type. Lowercased for uniformity.
+    public let type: String
+    public let amount: Decimal
+    public let quantity: Double?
+    public let price: Decimal?
+
+    public init(date: String, ticker: String?, type: String, amount: Decimal, quantity: Double?, price: Decimal?) {
+        self.date = date
+        self.ticker = ticker
+        self.type = type
+        self.amount = amount
+        self.quantity = quantity
+        self.price = price
+    }
+}
+
+public struct InvestmentTransactionListResult: ToolResult, Sendable {
+    public let rows: [InvestmentTransactionRow]
+    public let count: Int
+    public let periodLabel: String
+    public let activityFilter: String?
+    public let limit: Int
+    public let truncated: Bool
+
+    public var toolName: String { "list_investment_transactions" }
+
+    public init(
+        rows: [InvestmentTransactionRow],
+        count: Int,
+        periodLabel: String,
+        activityFilter: String?,
+        limit: Int,
+        truncated: Bool
+    ) {
+        self.rows = rows
+        self.count = count
+        self.periodLabel = periodLabel
+        self.activityFilter = activityFilter
+        self.limit = limit
+        self.truncated = truncated
+    }
+
+    public func toJSON() -> String {
+        var rowsJSON = "["
+        rowsJSON += rows.map { r in
+            let ticker = r.ticker.map { "\"\($0)\"" } ?? "null"
+            let qty = r.quantity.map { String(format: "%.4f", $0) } ?? "null"
+            let price = r.price.map { "\"\($0.currencyFormatted)\"" } ?? "null"
+            return "{\"date\":\"\(r.date)\",\"ticker\":\(ticker),\"type\":\"\(r.type)\",\"amount\":\"\(r.amount.currencyFormatted)\",\"quantity\":\(qty),\"price\":\(price)}"
+        }.joined(separator: ",")
+        rowsJSON += "]"
+        let activity = activityFilter.map { "\"\($0)\"" } ?? "null"
+        return "{\"rows\":\(rowsJSON),\"count\":\(count),\"period\":\"\(periodLabel)\",\"activity_filter\":\(activity),\"truncated\":\(truncated)}"
+    }
+
+    public func templateResponse(tone: ChatTone) -> String {
+        if rows.isEmpty {
+            let label = activityFilter ?? "investment activity"
+            switch tone {
+            case .professional: return "No \(label) recorded \(periodLabel)."
+            case .friendly: return "Nothing doing \(periodLabel) — no \(label) to show!"
+            case .funny: return "Your portfolio took a nap \(periodLabel). Zero \(label)."
+            case .strict: return "No \(label) \(periodLabel)."
+            }
+        }
+        var list = ""
+        for r in rows {
+            let ticker = r.ticker ?? "—"
+            let qtyStr: String = r.quantity.map { String(format: " · %.4f sh", $0) } ?? ""
+            list += "\n- \(r.date) \(r.type.uppercased()) \(ticker): \(r.amount.currencyFormatted)\(qtyStr)"
+        }
+        let word = count == 1 ? "transaction" : "transactions"
+        let truncatedSuffix = truncated ? "\n\n(showing first \(rows.count) of \(count))" : ""
+        let label = activityFilter ?? "activity"
+        switch tone {
+        case .professional: return "\(count) investment \(word) (\(label), \(periodLabel)):\(list)\(truncatedSuffix)"
+        case .friendly: return "Here's your \(label) \(periodLabel) — \(count) \(word):\(list)\(truncatedSuffix)"
+        case .funny: return "Your portfolio's greatest hits \(periodLabel) — \(count) \(word):\(list)\(truncatedSuffix)"
+        case .strict: return "\(count) \(word) for \(label) \(periodLabel). Review each:\(list)\(truncatedSuffix)"
+        }
+    }
+}
+
+// MARK: - Wealth tool results
+
+/// Represents one holding row, pre-resolved with its security label and
+/// unrealized P/L so the LLM / template can print it verbatim.
+public struct HoldingLine: Sendable {
+    public let label: String
+    public let quantity: Double
+    public let marketValue: Decimal
+    public let unrealizedPL: Decimal?
+
+    public init(label: String, quantity: Double, marketValue: Decimal, unrealizedPL: Decimal?) {
+        self.label = label
+        self.quantity = quantity
+        self.marketValue = marketValue
+        self.unrealizedPL = unrealizedPL
+    }
+}
+
+public struct HoldingsResult: ToolResult, Sendable {
+    public let totalValue: Decimal
+    public let unrealizedPL: Decimal?
+    public let positionCount: Int
+    public let topPositions: [HoldingLine]
+    /// When the user asked about a specific ticker/name this carries the
+    /// filter label so the template can say "your AAPL holdings" etc.
+    public let filterLabel: String?
+
+    public var toolName: String { "holdings_query" }
+
+    public init(
+        totalValue: Decimal,
+        unrealizedPL: Decimal?,
+        positionCount: Int,
+        topPositions: [HoldingLine],
+        filterLabel: String? = nil
+    ) {
+        self.totalValue = totalValue
+        self.unrealizedPL = unrealizedPL
+        self.positionCount = positionCount
+        self.topPositions = topPositions
+        self.filterLabel = filterLabel
+    }
+
+    public func toJSON() -> String {
+        var positions = "["
+        positions += topPositions.prefix(5).map { p in
+            let plStr = p.unrealizedPL.map { "\"\($0.currencyFormatted)\"" } ?? "null"
+            let qty = String(format: "%.4f", p.quantity)
+            return "{\"label\":\"\(p.label)\",\"quantity\":\(qty),\"value\":\"\(p.marketValue.currencyFormatted)\",\"unrealized_pl\":\(plStr)}"
+        }.joined(separator: ",")
+        positions += "]"
+        let plStr = unrealizedPL.map { "\"\($0.currencyFormatted)\"" } ?? "null"
+        let filter = filterLabel.map { "\"\($0)\"" } ?? "null"
+        return "{\"total_value\":\"\(totalValue.currencyFormatted)\",\"unrealized_pl\":\(plStr),\"position_count\":\(positionCount),\"filter\":\(filter),\"top_positions\":\(positions)}"
+    }
+
+    public func templateResponse(tone: ChatTone) -> String {
+        if positionCount == 0 {
+            if let f = filterLabel {
+                switch tone {
+                case .professional: return "No holdings found matching \"\(f)\"."
+                case .friendly: return "I couldn't find any holdings matching \(f). Maybe check the ticker?"
+                case .funny: return "Zero shares of \(f) detected. Either you sold them all or you're about to buy in!"
+                case .strict: return "No holdings match \"\(f)\". Verify the ticker symbol."
+                }
+            }
+            switch tone {
+            case .professional: return "No investment holdings found. Link a brokerage account to see your positions."
+            case .friendly: return "Looks like no brokerage has been linked yet — once you do, your positions will show up here!"
+            case .funny: return "Holdings list: emptier than my fridge on a Sunday. Link a brokerage to fix that!"
+            case .strict: return "No holdings on file. Connect a brokerage account."
+            }
+        }
+
+        var breakdown = ""
+        for p in topPositions.prefix(5) {
+            let qty = p.quantity.formatted(.number.precision(.fractionLength(0...4)))
+            let plSuffix: String = p.unrealizedPL.map {
+                " (\($0 >= 0 ? "+" : "")\($0.currencyFormatted))"
+            } ?? ""
+            breakdown += "\n- \(p.label): \(qty) shares worth \(p.marketValue.currencyFormatted)\(plSuffix)"
+        }
+        let plLine: String = unrealizedPL.map {
+            "\nUnrealized P/L: \($0 >= 0 ? "+" : "")\($0.currencyFormatted)"
+        } ?? ""
+        let posWord = positionCount == 1 ? "position" : "positions"
+        let scope = filterLabel ?? "portfolio"
+
+        switch tone {
+        case .professional:
+            return "Your \(scope) is valued at \(totalValue.currencyFormatted) across \(positionCount) \(posWord).\(plLine)\(breakdown)"
+        case .friendly:
+            return "Your \(scope) is sitting at \(totalValue.currencyFormatted) across \(positionCount) \(posWord).\(plLine)\(breakdown)"
+        case .funny:
+            return "Here's your \(scope): \(totalValue.currencyFormatted) spread across \(positionCount) \(posWord). Don't spend it all at once!\(plLine)\(breakdown)"
+        case .strict:
+            return "\(scope.capitalized) value: \(totalValue.currencyFormatted) across \(positionCount) \(posWord).\(plLine)\(breakdown)"
+        }
+    }
+}
+
+public struct LiabilityReportResult: ToolResult, Sendable {
+    public struct Bucket: Sendable {
+        public let kind: String  // "credit" | "mortgage" | "student"
+        public let count: Int
+        public let outstandingBalance: Decimal
+        public let minimumPayment: Decimal?
+        public let nextDueDate: String?
+
+        public init(
+            kind: String,
+            count: Int,
+            outstandingBalance: Decimal,
+            minimumPayment: Decimal?,
+            nextDueDate: String?
+        ) {
+            self.kind = kind
+            self.count = count
+            self.outstandingBalance = outstandingBalance
+            self.minimumPayment = minimumPayment
+            self.nextDueDate = nextDueDate
+        }
+    }
+
+    public let totalOwed: Decimal
+    public let buckets: [Bucket]
+    public let filterKind: String?
+
+    public var toolName: String { "liability_report" }
+
+    public init(totalOwed: Decimal, buckets: [Bucket], filterKind: String?) {
+        self.totalOwed = totalOwed
+        self.buckets = buckets
+        self.filterKind = filterKind
+    }
+
+    public func toJSON() -> String {
+        var bucketJSON = "["
+        bucketJSON += buckets.map { b in
+            let min = b.minimumPayment.map { "\"\($0.currencyFormatted)\"" } ?? "null"
+            let due = b.nextDueDate.map { "\"\($0)\"" } ?? "null"
+            return "{\"kind\":\"\(b.kind)\",\"count\":\(b.count),\"balance\":\"\(b.outstandingBalance.currencyFormatted)\",\"min_payment\":\(min),\"next_due\":\(due)}"
+        }.joined(separator: ",")
+        bucketJSON += "]"
+        let filter = filterKind.map { "\"\($0)\"" } ?? "null"
+        return "{\"total_owed\":\"\(totalOwed.currencyFormatted)\",\"filter\":\(filter),\"buckets\":\(bucketJSON)}"
+    }
+
+    public func templateResponse(tone: ChatTone) -> String {
+        if buckets.isEmpty {
+            if let f = filterKind {
+                switch tone {
+                case .professional: return "No \(f) liabilities on file."
+                case .friendly: return "You don't have any \(f) accounts linked — nothing owed there!"
+                case .funny: return "Zero \(f) debt. Either you're loaded or the bank lost your file!"
+                case .strict: return "No \(f) liabilities recorded."
+                }
+            }
+            switch tone {
+            case .professional: return "No liabilities on file. Link a credit card, mortgage, or student loan account to track them here."
+            case .friendly: return "Looks like you have no debts tracked yet. Link a credit card or loan to see them!"
+            case .funny: return "Debt-free status: verified (or we just haven't linked any loans yet). Either way, congrats!"
+            case .strict: return "No liabilities recorded. Connect relevant accounts to track debt."
+            }
+        }
+
+        var lines = ""
+        for b in buckets {
+            let kindLabel = b.kind.capitalized
+            let countWord = b.count == 1 ? "account" : "accounts"
+            var line = "\n- \(kindLabel) (\(b.count) \(countWord)): \(b.outstandingBalance.currencyFormatted) owed"
+            if let m = b.minimumPayment, m > 0 {
+                line += ", min \(m.currencyFormatted)"
+            }
+            if let due = b.nextDueDate {
+                line += " due \(due)"
+            }
+            lines += line
+        }
+
+        switch tone {
+        case .professional:
+            return "Total liabilities: \(totalOwed.currencyFormatted).\(lines)"
+        case .friendly:
+            return "Here's where your debts stand — total of \(totalOwed.currencyFormatted) across everything:\(lines)"
+        case .funny:
+            return "Your debt tour: \(totalOwed.currencyFormatted) total. Your future self says \"please\".\(lines)"
+        case .strict:
+            return "Outstanding debt: \(totalOwed.currencyFormatted). Review and prioritize payoff.\(lines)"
+        }
+    }
+}
+
+public struct NetWorthResult: ToolResult, Sendable {
+    public let cashBalance: Decimal
+    public let investmentBalance: Decimal
+    public let liabilityBalance: Decimal
+    public let netWorth: Decimal
+
+    public var toolName: String { "net_worth" }
+
+    public init(cashBalance: Decimal, investmentBalance: Decimal, liabilityBalance: Decimal) {
+        self.cashBalance = cashBalance
+        self.investmentBalance = investmentBalance
+        self.liabilityBalance = liabilityBalance
+        self.netWorth = cashBalance + investmentBalance - liabilityBalance
+    }
+
+    public func toJSON() -> String {
+        "{\"cash\":\"\(cashBalance.currencyFormatted)\",\"investments\":\"\(investmentBalance.currencyFormatted)\",\"liabilities\":\"\(liabilityBalance.currencyFormatted)\",\"net_worth\":\"\(netWorth.currencyFormatted)\"}"
+    }
+
+    public func templateResponse(tone: ChatTone) -> String {
+        let assets = cashBalance + investmentBalance
+        let breakdown =
+            "\n- Cash accounts: \(cashBalance.currencyFormatted)" +
+            "\n- Investments: \(investmentBalance.currencyFormatted)" +
+            "\n- Liabilities: \(liabilityBalance.currencyFormatted)"
+
+        switch tone {
+        case .professional:
+            return "Estimated net worth: \(netWorth.currencyFormatted) (assets \(assets.currencyFormatted) − liabilities \(liabilityBalance.currencyFormatted)).\(breakdown)"
+        case .friendly:
+            return "Your net worth is about \(netWorth.currencyFormatted) — \(assets.currencyFormatted) in assets minus \(liabilityBalance.currencyFormatted) in debts.\(breakdown)"
+        case .funny:
+            if netWorth > 0 {
+                return "Drumroll... your net worth is \(netWorth.currencyFormatted)! Assets \(assets.currencyFormatted) vs. debts \(liabilityBalance.currencyFormatted). Not bad, tycoon.\(breakdown)"
+            }
+            return "Your net worth is \(netWorth.currencyFormatted). Hey, everyone starts somewhere — assets \(assets.currencyFormatted) vs. debts \(liabilityBalance.currencyFormatted).\(breakdown)"
+        case .strict:
+            return "Net worth: \(netWorth.currencyFormatted). Assets: \(assets.currencyFormatted). Liabilities: \(liabilityBalance.currencyFormatted). Evaluate monthly progress.\(breakdown)"
+        }
+    }
+}
+
+public struct InvestmentActivityResult: ToolResult, Sendable {
+    public let periodLabel: String
+    public let activityLabel: String  // "dividends", "trades", "all activity"
+    public let totalBuys: Decimal
+    public let totalSells: Decimal
+    public let totalDividends: Decimal
+    public let totalFees: Decimal
+    public let count: Int
+
+    public var toolName: String { "investment_activity" }
+
+    public init(
+        periodLabel: String,
+        activityLabel: String,
+        totalBuys: Decimal,
+        totalSells: Decimal,
+        totalDividends: Decimal,
+        totalFees: Decimal,
+        count: Int
+    ) {
+        self.periodLabel = periodLabel
+        self.activityLabel = activityLabel
+        self.totalBuys = totalBuys
+        self.totalSells = totalSells
+        self.totalDividends = totalDividends
+        self.totalFees = totalFees
+        self.count = count
+    }
+
+    public func toJSON() -> String {
+        "{\"period\":\"\(periodLabel)\",\"activity\":\"\(activityLabel)\",\"count\":\(count),\"buys\":\"\(totalBuys.currencyFormatted)\",\"sells\":\"\(totalSells.currencyFormatted)\",\"dividends\":\"\(totalDividends.currencyFormatted)\",\"fees\":\"\(totalFees.currencyFormatted)\"}"
+    }
+
+    public func templateResponse(tone: ChatTone) -> String {
+        if count == 0 {
+            switch tone {
+            case .professional: return "No investment activity \(periodLabel)."
+            case .friendly: return "Quiet on the investment front \(periodLabel) — no trades, dividends, or fees."
+            case .funny: return "Your portfolio did its best impression of a rock \(periodLabel). Zero activity!"
+            case .strict: return "No investment activity recorded \(periodLabel)."
+            }
+        }
+        let txnWord = count == 1 ? "transaction" : "transactions"
+        let breakdown =
+            "\n- Buys: \(totalBuys.currencyFormatted)" +
+            "\n- Sells: \(totalSells.currencyFormatted)" +
+            "\n- Dividends: \(totalDividends.currencyFormatted)" +
+            "\n- Fees: \(totalFees.currencyFormatted)"
+
+        switch tone {
+        case .professional:
+            return "Investment activity \(periodLabel): \(count) \(txnWord).\(breakdown)"
+        case .friendly:
+            return "Here's your \(activityLabel) \(periodLabel) — \(count) \(txnWord) total:\(breakdown)"
+        case .funny:
+            return "Your portfolio had \(count) \(txnWord) \(periodLabel). Wall Street would be proud!\(breakdown)"
+        case .strict:
+            return "Investment activity \(periodLabel): \(count) \(txnWord). Review each line below.\(breakdown)"
+        }
+    }
+}
+
 public struct PassthroughResult: ToolResult, Sendable {
     public let message: String
     public let intentType: String
@@ -564,6 +1088,18 @@ public struct ConversationSlot: Sendable {
             if let cat { lastCategory = cat }
             lastPeriod = period
             lastIntent = "anomaly"
+        case .holdingsQuery(let ticker):
+            if let ticker { lastMerchant = ticker }  // reuse merchant slot for ticker context
+            lastIntent = "holdings"
+        case .liabilityReport(let kind):
+            if let kind { lastCategory = kind }
+            lastIntent = "liabilities"
+        case .netWorth:
+            lastIntent = "net_worth"
+        case .investmentActivity(let type, let period):
+            if let type { lastCategory = type }
+            lastPeriod = period
+            lastIntent = "investment_activity"
         case .greeting:
             clear()
         default: break

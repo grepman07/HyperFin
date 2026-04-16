@@ -55,3 +55,36 @@ public protocol UserProfileRepository: Sendable {
     func fetch() async throws -> UserProfile?
     func save(_ profile: UserProfile) async throws
 }
+
+// ----------------------------------------------------------------------------
+// Wealth read-only repositories
+//
+// The wealth side of the app (holdings, investment activity, liabilities) is
+// written wholesale by PlaidLinkHandler / sync jobs. Chat only ever reads,
+// so these protocols expose fetch methods only — no save/delete — and map
+// the opaque Plaid IDs to domain models for the tool layer to reason about.
+// ----------------------------------------------------------------------------
+
+public protocol HoldingRepository: Sendable {
+    func fetchAll() async throws -> [Holding]
+    /// Sum of `institutionValue` across all holdings (in account currency,
+    /// treated as USD for the aggregate). Missing values are ignored.
+    func totalValue() async throws -> Decimal
+}
+
+public protocol SecurityRepository: Sendable {
+    func fetchAll() async throws -> [Security]
+    func fetch(securityId: String) async throws -> Security?
+}
+
+public protocol InvestmentTransactionRepository: Sendable {
+    func fetchAll() async throws -> [InvestmentTransaction]
+    /// Filter by date window. Start is inclusive, end is exclusive.
+    func fetch(from: Date, to: Date) async throws -> [InvestmentTransaction]
+}
+
+public protocol LiabilityRepository: Sendable {
+    /// Returns every persisted liability, decoded into the matching domain
+    /// enum case. Rows whose payload fails to decode are silently dropped.
+    func fetchAll() async throws -> [Liability]
+}
