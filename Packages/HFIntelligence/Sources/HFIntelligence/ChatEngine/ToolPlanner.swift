@@ -45,11 +45,19 @@ public struct ToolPlanner: Sendable {
 
     /// Generate a plan for a query. Runs a set of cheap classifiers first so
     /// greetings and obvious out-of-scope queries never reach the LLM.
+    ///
+    /// When `cloudEngine` is provided (user has opted into cloud chat), the
+    /// planner tries it FIRST for the LLM plan — Claude Haiku is dramatically
+    /// better at structured JSON output than the on-device 3B model. If the
+    /// cloud call fails (network error, timeout), we fall through to the
+    /// local model, then the keyword heuristic. This is the "Cloud Planning
+    /// Bridge" from the architecture review.
     public func plan(
         query: String,
         slots: ConversationSlot,
         registry: ToolRegistry,
         inferenceEngine: InferenceEngine,
+        cloudEngine: CloudInferenceEngine? = nil,
         modelLoaded: Bool
     ) async -> Plan {
         // 1. Greeting short-circuit — empty plan, but NOT a refusal.
@@ -65,13 +73,6 @@ public struct ToolPlanner: Sendable {
             return Plan(calls: [], source: .unsupported)
         }
 
-        if !modelLoaded {
-            let heuristic = heuristicPlan(for: query)
-            return heuristic.isEmpty
-                ? Plan(calls: [], source: .unsupported)
-                : Plan(calls: heuristic, source: .heuristic)
-        }
-
         let catalog = await registry.catalogText()
         let whitelist = await Set(registry.toolNames())
 
@@ -82,23 +83,50 @@ public struct ToolPlanner: Sendable {
         )
         let request = InferenceRequest(
             messages: messages,
-            maxTokens: HFConstants.AI.classificationMaxTokens * 3, // plans can be longer than classifications
+            maxTokens: HFConstants.AI.classificationMaxTokens * 3,
             temperature: HFConstants.AI.classificationTemperature
         )
 
-        do {
-            let raw = try await inferenceEngine.generateComplete(request)
-            HFLogger.ai.debug("Planner raw: \(raw.prefix(300))")
-            let parsed = Self.parsePlan(raw: raw, whitelist: whitelist)
-            if !parsed.isEmpty {
-                return Plan(calls: parsed, source: .llm)
+        // 3. Cloud planning — try first when available. The cloud model
+        //    (Claude Haiku) is far more reliable at structured JSON output
+        //    than the on-device 3B model. Cost is negligible (~$0.0001/call).
+        if let cloudEngine {
+            do {
+                // Cloud engine uses the flattened prompt string, not structured
+                // messages, so build a separate request.
+                let cloudRequest = InferenceRequest(
+                    prompt: request.prompt,
+                    maxTokens: request.maxTokens,
+                    temperature: request.temperature
+                )
+                let raw = try await cloudEngine.generateComplete(cloudRequest)
+                HFLogger.ai.debug("Cloud planner raw: \(raw.prefix(300))")
+                let parsed = Self.parsePlan(raw: raw, whitelist: whitelist)
+                if !parsed.isEmpty {
+                    return Plan(calls: parsed, source: .llm)
+                }
+                HFLogger.ai.warning("Cloud planner returned empty/invalid plan, falling through to local")
+            } catch {
+                HFLogger.cloudChat.warning("Cloud planning failed: \(error.localizedDescription), falling through to local")
             }
-            HFLogger.ai.warning("Planner returned empty/invalid plan, using heuristic")
-        } catch {
-            HFLogger.ai.warning("Planner inference failed: \(error.localizedDescription), using heuristic")
         }
 
-        // Heuristic fallback. If it also declines to match, classify the
+        // 4. Local model planning.
+        if modelLoaded {
+            do {
+                let raw = try await inferenceEngine.generateComplete(request)
+                HFLogger.ai.debug("Planner raw: \(raw.prefix(300))")
+                let parsed = Self.parsePlan(raw: raw, whitelist: whitelist)
+                if !parsed.isEmpty {
+                    return Plan(calls: parsed, source: .llm)
+                }
+                HFLogger.ai.warning("Planner returned empty/invalid plan, using heuristic")
+            } catch {
+                HFLogger.ai.warning("Planner inference failed: \(error.localizedDescription), using heuristic")
+            }
+        }
+
+        // 5. Heuristic fallback. If it also declines to match, classify the
         // turn as unsupported rather than silently answering with no data —
         // greetings were handled above, so empty here means "I tried, found
         // nothing relevant."

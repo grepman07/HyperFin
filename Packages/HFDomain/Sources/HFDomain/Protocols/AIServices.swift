@@ -397,12 +397,17 @@ public struct TrendResult: ToolResult, Sendable {
 public struct AccountBalanceResult: ToolResult, Sendable {
     public let accounts: [(name: String, type: String, institution: String, balance: Decimal)]
     public let totalBalance: Decimal
+    /// When non-nil, indicates the scope filter applied (e.g. "cash").
+    /// The synthesis model sees this label and uses it directly — no need
+    /// to re-derive what "cash" means from account types.
+    public let scopeLabel: String?
 
     public var toolName: String { "account_balance" }
 
-    public init(accounts: [(String, String, String, Decimal)], totalBalance: Decimal) {
+    public init(accounts: [(String, String, String, Decimal)], totalBalance: Decimal, scopeLabel: String? = nil) {
         self.accounts = accounts
         self.totalBalance = totalBalance
+        self.scopeLabel = scopeLabel
     }
 
     public func toJSON() -> String {
@@ -411,7 +416,8 @@ public struct AccountBalanceResult: ToolResult, Sendable {
             .map { "{\"name\":\"\($0.name)\",\"type\":\"\($0.type)\",\"institution\":\"\($0.institution)\",\"balance\":\"\($0.balance.currencyFormatted)\"}" }
             .joined(separator: ",")
         accs += "]"
-        return "{\"accounts\":\(accs),\"total_balance\":\"\(totalBalance.currencyFormatted)\"}"
+        let scopeField = scopeLabel.map { ",\"scope\":\"\($0)\"" } ?? ""
+        return "{\"accounts\":\(accs),\"total_balance\":\"\(totalBalance.currencyFormatted)\"\(scopeField)}"
     }
 
     public func templateResponse(tone: ChatTone) -> String {
@@ -423,19 +429,20 @@ public struct AccountBalanceResult: ToolResult, Sendable {
             case .strict: return "No accounts linked. Connect a bank account to proceed."
             }
         }
+        let label = scopeLabel ?? "all"
         var accountList = ""
         for acc in accounts {
             accountList += "\n- \(acc.name) [\(acc.type)] (\(acc.institution)): \(acc.balance.currencyFormatted)"
         }
         switch tone {
         case .professional:
-            return "Total across all accounts: \(totalBalance.currencyFormatted)\(accountList)"
+            return "Total \(label) balance: \(totalBalance.currencyFormatted)\(accountList)"
         case .friendly:
-            return "Here are your balances! Your total across all accounts is \(totalBalance.currencyFormatted).\(accountList)"
+            return "Here are your \(label) balances! Total is \(totalBalance.currencyFormatted).\(accountList)"
         case .funny:
-            return "Drumroll please... your total balance is \(totalBalance.currencyFormatted)! Here's the breakdown:\(accountList)"
+            return "Drumroll please... your \(label) balance is \(totalBalance.currencyFormatted)! Here's the breakdown:\(accountList)"
         case .strict:
-            return "Account balances — Total: \(totalBalance.currencyFormatted)\(accountList)"
+            return "\(label.capitalized) balances — Total: \(totalBalance.currencyFormatted)\(accountList)"
         }
     }
 }

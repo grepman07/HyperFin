@@ -56,28 +56,45 @@ struct BudgetStatusTool: Tool {
 
 struct AccountBalanceTool: Tool {
     let name = "account_balance"
-    let description = "Return balances for linked cash/credit accounts. Optionally filter by account or institution name. Use for 'what's my balance', 'checking account', 'how much at Chase'. Does NOT compute net worth — use net_worth for that."
-    let argsSignature = "(account_name?: string)"
+    let description = "Return balances for linked accounts. Use scope to control which account types are included: 'cash' for checking and savings only (liquid cash), 'credit' for credit cards, 'all' for every account type. Optionally filter by account or institution name. Use for 'what's my balance', 'cash balance', 'checking account', 'how much at Chase'. Does NOT compute net worth — use net_worth for that."
+    let argsSignature = "(scope?: string, account_name?: string)  // scope ∈ {cash, credit, all} default all"
+
+    /// Account types included for each scope value. The tool — not the
+    /// LLM — decides what "cash" means. This is the dynamic ontology
+    /// mapping: adding a new account type (e.g., money market) only
+    /// requires updating this map, not the synthesis prompt.
+    private static let scopeFilter: [String: Set<AccountType>] = [
+        "cash": [.checking, .savings],
+        "credit": [.credit],
+        "all": [.checking, .savings, .credit, .loan, .investment]
+    ]
 
     func execute(args: [String: ToolArgValue], repos: ToolRepos) async throws -> any ToolResult {
         let accountName = args.string("account_name")
-        let accounts = try await repos.accounts.fetchAll()
+        let scope = args.string("scope") ?? "all"
+        let allowedTypes = Self.scopeFilter[scope] ?? Self.scopeFilter["all"]!
+
+        var accounts = try await repos.accounts.fetchAll()
+
+        // Apply scope filter — the model never sees accounts outside
+        // the requested scope, so it can't misinterpret them.
+        accounts = accounts.filter { allowedTypes.contains($0.accountType) }
+
+        // Apply optional account name / institution filter.
         if let name = accountName {
             let lowered = name.lowercased()
-            let filtered = accounts.filter {
+            accounts = accounts.filter {
                 $0.accountName.lowercased().contains(lowered)
                     || $0.institutionName.lowercased().contains(lowered)
             }
-            let total = filtered.reduce(Decimal.zero) { $0 + $1.currentBalance }
-            return AccountBalanceResult(
-                accounts: filtered.map { ($0.accountName, $0.accountType.rawValue, $0.institutionName, $0.currentBalance) },
-                totalBalance: total
-            )
         }
+
         let total = accounts.reduce(Decimal.zero) { $0 + $1.currentBalance }
+        let scopeLabel = scope == "all" ? nil : scope
         return AccountBalanceResult(
             accounts: accounts.map { ($0.accountName, $0.accountType.rawValue, $0.institutionName, $0.currentBalance) },
-            totalBalance: total
+            totalBalance: total,
+            scopeLabel: scopeLabel
         )
     }
 }

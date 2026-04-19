@@ -77,12 +77,18 @@ public actor ChatEngine {
                     self._lastToolNames = []
 
                     // 1. PLAN
+                    // Pass cloudEngine to planner when user has opted in.
+                    // The planner tries cloud first (better JSON quality),
+                    // then local model, then keyword heuristic.
                     let modelLoaded = await self.modelManager.isLoaded
+                    let cloudOptIn = context.userProfile?.cloudChatOptIn ?? false
+                    let plannerCloud = cloudOptIn ? self.cloudEngine : nil
                     let plan = await self.planner.plan(
                         query: text,
                         slots: self.conversationSlots,
                         registry: self.registry,
                         inferenceEngine: self.inferenceEngine,
+                        cloudEngine: plannerCloud,
                         modelLoaded: modelLoaded
                     )
                     HFLogger.ai.info("Plan[\(plan.source.rawValue)]: \(plan.calls.map(\.name).joined(separator: ","))")
