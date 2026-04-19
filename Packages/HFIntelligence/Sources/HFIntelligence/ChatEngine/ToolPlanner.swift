@@ -331,11 +331,18 @@ public struct ToolPlanner: Sendable {
             return [ToolCall(name: "liability_report", args: args)]
         }
 
-        // Holdings / portfolio.
+        // Holdings / portfolio / specific tickers.
         if lower.contains("holdings") || lower.contains("portfolio")
             || lower.contains("stocks") || lower.contains("brokerage")
-            || lower.contains("investments") {
+            || lower.contains("investments") || lower.contains("crypto")
+            || lower.contains("bitcoin") || lower.contains("ethereum") {
             return [ToolCall(name: "holdings_summary", args: [:])]
+        }
+
+        // Ticker-style questions: "how much BTC/AAPL/TSLA do I have?"
+        // Match 2-5 uppercase letter sequences that look like tickers.
+        if let ticker = extractTicker(from: query) {
+            return [ToolCall(name: "holdings_summary", args: ["ticker": .string(ticker)])]
         }
 
         // Investment activity.
@@ -385,5 +392,40 @@ public struct ToolPlanner: Sendable {
         }
 
         return []
+    }
+
+    // MARK: - Ticker extraction
+
+    /// Pull a likely ticker symbol out of a query like "how much BTC do I
+    /// have?" or "show me my AAPL". We look for 1-5 uppercase letters that
+    /// aren't common English words. This only fires in the heuristic path
+    /// (model unavailable or mis-planned), so false positives are low-cost —
+    /// they just route to `holdings_summary` which returns an empty result
+    /// if the ticker doesn't match any holding.
+    private func extractTicker(from query: String) -> String? {
+        // Common short uppercase words that aren't tickers.
+        let stopWords: Set<String> = [
+            "I", "A", "AM", "AN", "AS", "AT", "BE", "BY", "DO", "GO",
+            "IF", "IN", "IS", "IT", "ME", "MY", "NO", "OF", "OK", "ON",
+            "OR", "SO", "TO", "UP", "US", "WE", "THE", "AND", "ARE",
+            "BUT", "CAN", "DID", "FOR", "GET", "GOT", "HAS", "HAD",
+            "HER", "HIM", "HIS", "HOW", "ITS", "LET", "MAY", "NOT",
+            "NOW", "OLD", "OUR", "OUT", "OWN", "PUT", "RAN", "SAY",
+            "SHE", "TOO", "USE", "WAS", "WAY", "WHO", "WHY", "YES",
+            "YET", "YOU", "HAVE", "MUCH", "WHAT", "WITH", "FROM",
+            "SHOW", "TELL", "THAT", "THIS", "DOES", "WILL"
+        ]
+
+        let words = query.components(separatedBy: .whitespacesAndNewlines)
+        for word in words {
+            // Strip trailing punctuation ("BTC?" → "BTC")
+            let cleaned = word.trimmingCharacters(in: .punctuationCharacters)
+            guard (1...5).contains(cleaned.count),
+                  cleaned == cleaned.uppercased(),
+                  cleaned.allSatisfy({ $0.isLetter }),
+                  !stopWords.contains(cleaned) else { continue }
+            return cleaned
+        }
+        return nil
     }
 }

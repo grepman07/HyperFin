@@ -73,6 +73,12 @@ public struct PromptAssembler: Sendable {
         Q: "What are my holdings and any dividends this year?"
         A: {"tools":[{"name":"holdings_summary","args":{}},{"name":"investment_activity","args":{"activity_type":"dividend","period":"year_to_date"}}]}
 
+        Q: "How much BTC do I have?"
+        A: {"tools":[{"name":"holdings_summary","args":{"ticker":"BTC"}}]}
+
+        Q: "How much crypto do I have?"
+        A: {"tools":[{"name":"holdings_summary","args":{}}]}
+
         Q: "Is AAPL a good buy?"
         A: {"tools":[]}
 
