@@ -35,7 +35,7 @@ public struct ToolPlanner: Sendable {
         ///   letting the LLM guess at it.
         public let source: Source
 
-        public enum Source: String, Sendable { case llm, heuristic, empty, unsupported }
+        public enum Source: String, Sendable { case llm, heuristic, semantic, empty, unsupported }
 
         public init(calls: [ToolCall], source: Source) {
             self.calls = calls
@@ -58,6 +58,7 @@ public struct ToolPlanner: Sendable {
         registry: ToolRegistry,
         inferenceEngine: InferenceEngine,
         cloudEngine: CloudInferenceEngine? = nil,
+        semanticRouter: SemanticRouter? = nil,
         modelLoaded: Bool
     ) async -> Plan {
         // 1. Greeting short-circuit — empty plan, but NOT a refusal.
@@ -65,16 +66,36 @@ public struct ToolPlanner: Sendable {
             return Plan(calls: [], source: .empty)
         }
 
-        // 2. Out-of-scope short-circuit — the user is asking for data or
-        //    advice the app doesn't have (benchmarks, forecasts, stock
-        //    picks, retirement projections). Skip the LLM entirely; the
-        //    engine will emit a honest "I don't have that" reply.
+        // 2. Out-of-scope keyword short-circuit. This is a fast pre-filter
+        //    for obvious OOS patterns — the semantic router below covers
+        //    the long tail, but keyword matches are nearly free so we run
+        //    them first.
         if Self.isOutOfScope(query) {
             return Plan(calls: [], source: .unsupported)
         }
 
-        let catalog = await registry.catalogText()
         let whitelist = await Set(registry.toolNames())
+
+        // 3. Semantic router. When available and confident, we skip the
+        //    LLM entirely — the router is cheaper, faster, and more
+        //    predictable for common phrasings. Ambiguous or low-confidence
+        //    decisions fall through to the LLM planner below.
+        if let semanticRouter, await semanticRouter.isAvailable {
+            let decision = await semanticRouter.route(query: query)
+            switch decision {
+            case .outOfScope:
+                return Plan(calls: [], source: .unsupported)
+            case .tool(let name, let argsHint, _):
+                if whitelist.contains(name) {
+                    let call = ToolCall(name: name, args: Self.convertArgsHint(argsHint))
+                    return Plan(calls: [call], source: .semantic)
+                }
+            case .uncertain:
+                break // fall through to LLM
+            }
+        }
+
+        let catalog = await registry.catalogText()
 
         let messages = promptAssembler.assemblePlannerPrompt(
             query: query,
@@ -134,6 +155,29 @@ public struct ToolPlanner: Sendable {
         return heuristic.isEmpty
             ? Plan(calls: [], source: .unsupported)
             : Plan(calls: heuristic, source: .heuristic)
+    }
+
+    // MARK: - Args hint conversion
+    //
+    // The semantic router's `argsHint` is a simple [String:String] because
+    // the seed data is hand-written and string-typed. For numeric fields
+    // (min_amount, max_amount, months, limit) we parse to the appropriate
+    // ToolArgValue case so downstream tools can read them without extra
+    // coercion.
+
+    static func convertArgsHint(_ hint: [String: String]) -> [String: ToolArgValue] {
+        let numericKeys: Set<String> = ["min_amount", "max_amount", "months", "limit"]
+        var out: [String: ToolArgValue] = [:]
+        for (k, v) in hint {
+            if numericKeys.contains(k) {
+                if let i = Int(v) { out[k] = .integer(i) }
+                else if let d = Double(v) { out[k] = .number(d) }
+                else { out[k] = .string(v) }
+            } else {
+                out[k] = .string(v)
+            }
+        }
+        return out
     }
 
     // MARK: - Scope classifiers

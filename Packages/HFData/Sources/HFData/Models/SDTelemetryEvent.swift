@@ -22,6 +22,12 @@ public final class SDTelemetryEvent {
     public var feedback: String?
     public var sent: Bool = false
     public var attempts: Int = 0
+    /// Raw plan JSON from the planner for shadow-eval pipeline. Optional
+    /// with default "" for migration compatibility — SwiftData requires
+    /// defaults for new properties added to existing stores.
+    public var planJSON: String = ""
+    /// Routing tier that produced the plan (semantic/llm/heuristic/etc).
+    public var planSource: String = ""
 
     public init(from domain: TelemetryEvent) {
         self.id = domain.id
@@ -39,6 +45,8 @@ public final class SDTelemetryEvent {
         self.feedback = domain.feedback
         self.sent = false
         self.attempts = 0
+        self.planJSON = domain.planJSON ?? ""
+        self.planSource = domain.planSource ?? ""
     }
 
     public func toDomain() -> TelemetryEvent {
@@ -55,7 +63,9 @@ public final class SDTelemetryEvent {
             latencyMs: latencyMs,
             modelVersion: modelVersion,
             appVersion: appVersion,
-            feedback: feedback
+            feedback: feedback,
+            planJSON: planJSON.isEmpty ? nil : planJSON,
+            planSource: planSource.isEmpty ? nil : planSource
         )
     }
 }

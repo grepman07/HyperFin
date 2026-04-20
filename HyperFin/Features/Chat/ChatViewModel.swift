@@ -343,12 +343,18 @@ final class ChatViewModel {
             // tool-calling pipeline, "intent" is represented by the set of
             // tools the planner chose — join them with "+" so a single
             // string column on the server can still carry multi-tool turns.
+            // planJSON + planSource feed the data flywheel (shadow eval →
+            // training pairs for the semantic router).
             let toolNames = await engine.lastToolNames()
+            let planSource = await engine.lastPlanSource()
+            let planJSON = await engine.lastPlanJSON()
             await logTelemetry(
                 query: text,
                 responseId: responseId,
                 latencyMs: Int(Date().timeIntervalSince(start) * 1000),
-                toolNames: toolNames
+                toolNames: toolNames,
+                planSource: planSource,
+                planJSON: planJSON
             )
         } catch {
             updateResponse(responseId: responseId, content: "Something went wrong. Please try again.")
@@ -362,7 +368,9 @@ final class ChatViewModel {
         query: String,
         responseId: UUID,
         latencyMs: Int,
-        toolNames: [String]
+        toolNames: [String],
+        planSource: String,
+        planJSON: String
     ) async {
         guard let logger = telemetryLogger else { return }
         guard let idx = messages.firstIndex(where: { $0.id == responseId }) else { return }
@@ -388,7 +396,9 @@ final class ChatViewModel {
             category: nil,
             period: nil,
             latencyMs: latencyMs,
-            sessionId: sessionId
+            sessionId: sessionId,
+            planJSON: planJSON.isEmpty ? nil : planJSON,
+            planSource: planSource.isEmpty ? nil : planSource
         )
         if let eventId {
             telemetryEventIds[responseId] = eventId

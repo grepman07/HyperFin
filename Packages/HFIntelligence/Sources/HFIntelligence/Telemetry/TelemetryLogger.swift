@@ -49,6 +49,10 @@ public actor TelemetryLogger {
 
     /// Anonymize, persist, and return the event ID so the caller can later
     /// attach feedback. Returns nil if the user has not opted in.
+    ///
+    /// `planJSON` and `planSource` are optional — they power the server-side
+    /// shadow evaluation pipeline (feed queryAnon to a superior model,
+    /// compare to planJSON, derive training pairs for the semantic router).
     @discardableResult
     public func log(
         queryRaw: String,
@@ -57,7 +61,9 @@ public actor TelemetryLogger {
         category: String?,
         period: String?,
         latencyMs: Int,
-        sessionId: UUID
+        sessionId: UUID,
+        planJSON: String? = nil,
+        planSource: String? = nil
     ) async -> UUID? {
         guard await isOptedInProvider() else {
             return nil
@@ -78,12 +84,14 @@ public actor TelemetryLogger {
             latencyMs: latencyMs,
             modelVersion: modelVersion,
             appVersion: appVersion,
-            feedback: nil
+            feedback: nil,
+            planJSON: planJSON,
+            planSource: planSource
         )
 
         do {
             try await repo.save(event)
-            HFLogger.telemetry.debug("TelemetryLogger: logged event \(event.id.uuidString.prefix(8)) intent=\(intent)")
+            HFLogger.telemetry.debug("TelemetryLogger: logged event \(event.id.uuidString.prefix(8)) intent=\(intent) src=\(planSource ?? "-")")
             return event.id
         } catch {
             HFLogger.telemetry.error("TelemetryLogger: save failed: \(String(describing: error))")

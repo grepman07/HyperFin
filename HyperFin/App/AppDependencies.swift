@@ -43,6 +43,10 @@ final class AppDependencies {
     let cloudInferenceEngine: CloudInferenceEngine
     let toolRegistry: ToolRegistry
     let chatEngine: ChatEngine
+    /// Phase 1 semantic router — uses Apple NLEmbedding as the cold-start
+    /// embedding backend. Swappable for a trained MLX model later without
+    /// API changes. See docs/CHAT_ARCHITECTURE.md.
+    let semanticRouter: SemanticRouter
 
     // Security
     let biometricAuth: BiometricAuthManager
@@ -118,11 +122,19 @@ final class AppDependencies {
         // needs the repo graph, which SwiftData produces synchronously — so
         // registry construction happens inline and repos are wired below.
         self.toolRegistry = ToolRegistry()
+
+        // Semantic router — Phase 1 uses Apple's NLEmbedding (no download,
+        // OS-resident). Prewarming (embedding all seed exemplars) happens
+        // in a detached Task below so startup isn't blocked.
+        let embedProvider = NLEmbeddingProvider()
+        self.semanticRouter = SemanticRouter(provider: embedProvider)
+
         self.chatEngine = ChatEngine(
             inferenceEngine: inferenceEngine,
             modelManager: modelManager,
             registry: toolRegistry,
-            cloudEngine: cloudInferenceEngine
+            cloudEngine: cloudInferenceEngine,
+            semanticRouter: semanticRouter
         )
 
         self.telemetryLogger = TelemetryLogger(
@@ -163,6 +175,14 @@ final class AppDependencies {
                 liabilities: lRepo
             )
             await registry.setRepos(repos)
+        }
+
+        // Prewarm the semantic router. Embedding all seed exemplars takes
+        // a few hundred milliseconds with NLEmbedding; doing it eagerly in
+        // the background means the first real query lands on a hot router.
+        let router = semanticRouter
+        Task.detached {
+            await router.prewarm()
         }
 
         // Seed sample data for testing on first launch

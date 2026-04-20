@@ -29,6 +29,10 @@ public actor ChatEngine {
     private let registry: ToolRegistry
     private let planner: ToolPlanner
     private let promptAssembler: PromptAssembler
+    /// Optional semantic router — when present and ready, the planner
+    /// consults it before falling back to the LLM. Nil is safe (pipeline
+    /// just skips the semantic step).
+    private let semanticRouter: SemanticRouter?
 
     /// Per-conversation slot state carried from one turn to the next.
     /// The planner prompt references these as "Previous topic/merchant/period"
@@ -40,13 +44,27 @@ public actor ChatEngine {
     /// general-advice reply with no tools.
     private var _lastToolNames: [String] = []
 
+    /// The plan source of the most recent turn ("llm", "semantic",
+    /// "heuristic", "empty", "unsupported"). Feeds the data flywheel —
+    /// we need to know which routing tier answered so we can measure each
+    /// tier's accuracy against shadow-evaluated ground truth.
+    private var _lastPlanSource: String = ""
+
+    /// Raw plan JSON from the most recent turn. Server-side uses this for
+    /// shadow evaluation and to derive training pairs. Empty string for
+    /// turns that didn't go through a planner (canned replies, greetings).
+    private var _lastPlanJSON: String = ""
+
     public func lastToolNames() -> [String] { _lastToolNames }
+    public func lastPlanSource() -> String { _lastPlanSource }
+    public func lastPlanJSON() -> String { _lastPlanJSON }
 
     public init(
         inferenceEngine: InferenceEngine,
         modelManager: ModelManager,
         registry: ToolRegistry,
-        cloudEngine: CloudInferenceEngine? = nil
+        cloudEngine: CloudInferenceEngine? = nil,
+        semanticRouter: SemanticRouter? = nil
     ) {
         self.inferenceEngine = inferenceEngine
         self.cloudEngine = cloudEngine
@@ -54,6 +72,7 @@ public actor ChatEngine {
         self.registry = registry
         self.planner = ToolPlanner()
         self.promptAssembler = PromptAssembler()
+        self.semanticRouter = semanticRouter
     }
 
     public var isModelAvailable: Bool {
@@ -75,6 +94,8 @@ public actor ChatEngine {
             Task {
                 do {
                     self._lastToolNames = []
+                    self._lastPlanSource = ""
+                    self._lastPlanJSON = ""
 
                     // 1. PLAN
                     // Pass cloudEngine to planner when user has opted in.
@@ -89,9 +110,12 @@ public actor ChatEngine {
                         registry: self.registry,
                         inferenceEngine: self.inferenceEngine,
                         cloudEngine: plannerCloud,
+                        semanticRouter: self.semanticRouter,
                         modelLoaded: modelLoaded
                     )
                     HFLogger.ai.info("Plan[\(plan.source.rawValue)]: \(plan.calls.map(\.name).joined(separator: ","))")
+                    self._lastPlanSource = plan.source.rawValue
+                    self._lastPlanJSON = Self.encodePlanJSON(plan)
 
                     // 2. EXECUTE (parallel)
                     let results = try await self.executeAll(plan.calls)
@@ -241,6 +265,46 @@ public actor ChatEngine {
             return "Crystal ball's in the shop — I can't forecast markets or pick stocks. \(capabilities)"
         case .strict:
             return "I don't answer questions outside your on-device data. \(capabilities)"
+        }
+    }
+
+    /// Serialize a plan to a compact JSON string for telemetry. Matches the
+    /// shape the planner LLM produces so server-side analysis can compare
+    /// directly against shadow-evaluated ground truth. Returns "" for
+    /// plans with no tool calls (greetings, unsupported) so we don't waste
+    /// bytes uploading empty structures.
+    static func encodePlanJSON(_ plan: ToolPlanner.Plan) -> String {
+        guard !plan.calls.isEmpty else { return "" }
+        var parts: [String] = []
+        for call in plan.calls {
+            let argsJSON = encodeArgs(call.args)
+            parts.append("{\"name\":\"\(call.name)\",\"args\":\(argsJSON)}")
+        }
+        return "{\"tools\":[\(parts.joined(separator: ","))]}"
+    }
+
+    private static func encodeArgs(_ args: [String: ToolArgValue]) -> String {
+        if args.isEmpty { return "{}" }
+        // Sort keys so the serialized form is stable across runs — makes
+        // diffing shadow-eval output deterministic.
+        let sorted = args.sorted { $0.key < $1.key }
+        let pairs = sorted.map { (k, v) -> String in
+            "\"\(k)\":\(encodeArgValue(v))"
+        }
+        return "{\(pairs.joined(separator: ","))}"
+    }
+
+    private static func encodeArgValue(_ v: ToolArgValue) -> String {
+        switch v {
+        case .string(let s):
+            // Escape quotes and backslashes — minimal JSON-safe encoding.
+            let escaped = s.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            return "\"\(escaped)\""
+        case .integer(let i): return "\(i)"
+        case .number(let d): return "\(d)"
+        case .boolean(let b): return b ? "true" : "false"
+        case .null: return "null"
         }
     }
 
