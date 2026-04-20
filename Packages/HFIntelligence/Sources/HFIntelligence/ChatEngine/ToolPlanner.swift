@@ -201,16 +201,41 @@ public struct ToolPlanner: Sendable {
     /// data scope — market forecasts, stock picks, retirement planning,
     /// benchmark lookups, economic predictions. The keyword list is narrow
     /// on purpose; false positives here cost us a legitimate answer, so we
-    /// only match phrases that are almost always out of scope.
+    /// only match PHRASES that are almost always out of scope, not bare
+    /// topic words. For example: the word "retirement" alone is NOT OOS
+    /// (the user may be asking about their retirement account balance,
+    /// which we can answer) — but "save for retirement" IS OOS because
+    /// it's asking for advice we don't provide.
     static func isOutOfScope(_ query: String) -> Bool {
         let lower = query.lowercased()
         let phrases = [
-            "retirement", "401k", "401(k)", "roth ira", "ira contribution",
-            "forecast", "market outlook", "s&p", "s & p", "index fund",
-            "benchmark", "should i buy", "should i invest", "should i sell",
+            // Retirement ADVICE / PROJECTIONS (not balances)
+            "save for retirement", "saving for retirement", "retirement planning",
+            "planning for retirement", "retirement advice", "on track for retirement",
+            "how much to retire", "need to retire", "when can i retire",
+            "enough to retire", "ready to retire",
+            // 401k / IRA ADVICE (not balances)
+            "max out 401", "max out my 401", "max my 401", "maxing out 401",
+            "contribute to 401", "contribute to my 401",
+            "401k advice", "401(k) advice",
+            "contribute to ira", "contribute to my ira",
+            "max out ira", "max out my ira",
+            "roth vs", "vs roth", "traditional vs", "vs traditional",
+            "ira contribution",
+            // Market forecasts / predictions
+            "forecast", "market outlook", "s&p 500", "s & p 500",
+            "projected return", "projected growth", "next year will",
+            "will the market", "stock market predict", "economic predict",
+            // Stock picking / advice
+            "should i buy", "should i invest", "should i sell",
             "stock advice", "a good buy", "a good investment",
-            "is aapl", "is tsla", "is nvda", "is msft", "is googl", "is amzn",
-            "projected return", "projected growth", "next year will"
+            "recommend a stock", "recommend me a stock", "good stock to buy",
+            "is aapl a good", "is tsla a good", "is nvda a good",
+            "is msft a good", "is googl a good", "is amzn a good",
+            "is aapl going", "is tsla going", "is nvda going",
+            // Generic financial advice
+            "refinance my mortgage", "best way to build wealth",
+            "how do i get out of debt"
         ]
         return phrases.contains(where: { lower.contains($0) })
     }

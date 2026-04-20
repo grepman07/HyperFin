@@ -176,6 +176,17 @@ public enum ToolExemplars {
               argsHint: ["account_name": "fidelity"]),
         .init(label: "holdings_summary", query: "my top holdings"),
         .init(label: "holdings_summary", query: "what stocks do I own"),
+        // Retirement BALANCE (existing data) — deliberately paired with
+        // the OOS retirement ADVICE exemplars below so the router learns
+        // the distinction. A retirement account is just an investment
+        // account; asking "how much is in it" is a holdings query.
+        .init(label: "holdings_summary", query: "how much do I have in my 401k"),
+        .init(label: "holdings_summary", query: "my 401k balance"),
+        .init(label: "holdings_summary", query: "how much is in my IRA"),
+        .init(label: "holdings_summary", query: "my retirement savings balance"),
+        .init(label: "holdings_summary", query: "how much retirement savings do I have"),
+        .init(label: "holdings_summary", query: "my retirement account balance"),
+        .init(label: "holdings_summary", query: "how much crypto and retirement savings do I have"),
 
         // ─────────── liability_report ───────────
         .init(label: "liability_report", query: "what do I owe"),

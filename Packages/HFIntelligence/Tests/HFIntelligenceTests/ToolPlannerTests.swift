@@ -198,4 +198,57 @@ final class ToolPlannerTests: XCTestCase {
 
         XCTAssertEqual(calls.first?.name, "spending_summary")
     }
+
+    // MARK: - OOS keyword regression tests
+    //
+    // These tests lock down the SPECIFIC phrasings that should or should not
+    // trip the keyword OOS pre-filter. Every entry here corresponds to a
+    // real user query we've observed either working or failing.
+
+    func testIsOutOfScope_retirementAdvice_fires() {
+        // Queries asking for retirement PLANNING / ADVICE → OOS
+        XCTAssertTrue(ToolPlanner.isOutOfScope("how much should I save for retirement"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("am I on track for retirement"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("retirement planning advice"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("when can I retire"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("how much do I need to retire"))
+    }
+
+    func testIsOutOfScope_retirementBalance_doesNotFire() {
+        // Queries asking about EXISTING retirement balances → NOT OOS.
+        // Retirement accounts are just investment accounts we track.
+        XCTAssertFalse(ToolPlanner.isOutOfScope("how much is in my 401k"),
+                       "Balance queries about 401k must NOT be OOS")
+        XCTAssertFalse(ToolPlanner.isOutOfScope("my retirement savings balance"))
+        XCTAssertFalse(ToolPlanner.isOutOfScope("how much crypto and retirement savings do I have"),
+                       "Multi-intent queries with retirement must NOT be OOS")
+        XCTAssertFalse(ToolPlanner.isOutOfScope("my retirement account balance"))
+        XCTAssertFalse(ToolPlanner.isOutOfScope("how much do I have in my IRA"))
+    }
+
+    func testIsOutOfScope_401kAdvice_fires() {
+        XCTAssertTrue(ToolPlanner.isOutOfScope("should I max out my 401k"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("contribute to 401k"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("roth vs traditional"))
+    }
+
+    func testIsOutOfScope_stockPicks_fires() {
+        XCTAssertTrue(ToolPlanner.isOutOfScope("should I buy tesla"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("is AAPL a good buy"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("stock advice please"))
+    }
+
+    func testIsOutOfScope_marketForecasts_fires() {
+        XCTAssertTrue(ToolPlanner.isOutOfScope("market forecast"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("will the market crash"))
+        XCTAssertTrue(ToolPlanner.isOutOfScope("next year will be good for stocks"))
+    }
+
+    func testIsOutOfScope_legitimateHoldingsQueries_doNotFire() {
+        // Regression tests for false positives we've hit in UAT.
+        XCTAssertFalse(ToolPlanner.isOutOfScope("how much BTC do I have"))
+        XCTAssertFalse(ToolPlanner.isOutOfScope("what are my holdings"))
+        XCTAssertFalse(ToolPlanner.isOutOfScope("how much AAPL do I own"))
+        XCTAssertFalse(ToolPlanner.isOutOfScope("my crypto portfolio"))
+    }
 }
