@@ -208,15 +208,19 @@ final class ChatEnginePipelineTests: XCTestCase {
         XCTAssertTrue(plan.calls.isEmpty)
     }
 
-    // MARK: - Scenario 5: Keyword OOS still fires first
+    // MARK: - Scenario 5: Keyword OOS runs only when semantic router is unavailable
 
-    func test_e2e_retirementQuery_keywordOOSBypassesRouter() async throws {
-        // Even with a faulty router pointing retirement to account_balance,
-        // the keyword pre-filter should catch "retirement" first.
+    func test_e2e_retirementAdvice_semanticRouterHandlesOOS() async throws {
+        // When semantic router is AVAILABLE, it's the primary OOS detector.
+        // Build exemplars explicitly so test labels are precise.
         let registry = await makeRegistry(with: makeAccounts())
-        let router = await makeSemanticRouter(seedEmbeddings: [
-            "how much for retirement": [1, 0, 0, 0],  // bad mapping
-            "what is my balance": [1, 0, 0, 0],
+        let provider = MockEmbeddingProvider(table: [
+            "save for retirement": [0, 0, 1, 0],
+            "how much should I save for retirement": [0, 0, 1, 0],
+        ])
+        let router = SemanticRouter(provider: provider)
+        await router.prewarm(exemplars: [
+            .init(label: OutOfScopeLabel, query: "save for retirement"),
         ])
 
         let planner = ToolPlanner()
@@ -230,7 +234,62 @@ final class ChatEnginePipelineTests: XCTestCase {
         )
 
         XCTAssertEqual(plan.source, .unsupported,
-                       "Keyword OOS must fire before semantic router")
+                       "Semantic router must handle OOS when available")
+    }
+
+    func test_e2e_retirementBalance_routesToHoldings_notOOS() async throws {
+        // Regression test for the "how much crypto and retirement savings
+        // do I have" bug — the keyword "retirement" used to false-positive
+        // this as OOS. With the semantic router as primary, legitimate
+        // balance queries route correctly via their holdings exemplar.
+        let registry = await makeRegistry(with: makeAccounts())
+        let provider = MockEmbeddingProvider(table: [
+            "my retirement balance": [1, 0, 0, 0],
+            "how much retirement savings do I have": [1, 0, 0, 0],
+            "save for retirement": [0, 0, 1, 0],
+        ])
+        let router = SemanticRouter(provider: provider)
+        await router.prewarm(exemplars: [
+            .init(label: "holdings_summary", query: "how much retirement savings do I have"),
+            .init(label: OutOfScopeLabel, query: "save for retirement"),
+        ])
+
+        let planner = ToolPlanner()
+        let plan = await planner.plan(
+            query: "my retirement balance",
+            slots: ConversationSlot(),
+            registry: registry,
+            inferenceEngine: InferenceEngine(modelManager: ModelManager()),
+            semanticRouter: router,
+            modelLoaded: false
+        )
+
+        XCTAssertEqual(plan.source, .semantic,
+                       "Retirement BALANCE query must go through semantic router, not get refused")
+        XCTAssertEqual(plan.calls.first?.name, "holdings_summary")
+    }
+
+    func test_e2e_retirementAdvice_routerUnavailable_keywordFiltersCatches() async throws {
+        // When the semantic router is NOT available (e.g., NLEmbedding not
+        // loaded yet on cold start), the keyword OOS filter becomes the
+        // fallback. It's intentionally narrow (advice phrases only) so it
+        // doesn't false-positive on balance queries.
+        let registry = await makeRegistry(with: makeAccounts())
+        // Router created but NEVER prewarmed — isAvailable = false
+        let router = SemanticRouter(provider: MockEmbeddingProvider(table: [:]))
+
+        let planner = ToolPlanner()
+        let plan = await planner.plan(
+            query: "how much should I save for retirement",
+            slots: ConversationSlot(),
+            registry: registry,
+            inferenceEngine: InferenceEngine(modelManager: ModelManager()),
+            semanticRouter: router,
+            modelLoaded: false
+        )
+
+        XCTAssertEqual(plan.source, .unsupported,
+                       "When router unavailable, keyword list should still catch advice phrases")
     }
 
     // MARK: - Scenario 6: Heuristic fallback when router is unavailable

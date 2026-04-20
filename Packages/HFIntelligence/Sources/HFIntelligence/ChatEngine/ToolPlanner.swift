@@ -62,24 +62,25 @@ public struct ToolPlanner: Sendable {
         modelLoaded: Bool
     ) async -> Plan {
         // 1. Greeting short-circuit — empty plan, but NOT a refusal.
+        //    This is the ONLY keyword match we keep unconditionally ahead
+        //    of the semantic layer. "hi" and "hello" are so unambiguous
+        //    that paying 50ms to embed them is pure waste.
         if Self.isGreeting(query) {
             return Plan(calls: [], source: .empty)
         }
 
-        // 2. Out-of-scope keyword short-circuit. This is a fast pre-filter
-        //    for obvious OOS patterns — the semantic router below covers
-        //    the long tail, but keyword matches are nearly free so we run
-        //    them first.
-        if Self.isOutOfScope(query) {
-            return Plan(calls: [], source: .unsupported)
-        }
-
         let whitelist = await Set(registry.toolNames())
 
-        // 3. Semantic router. When available and confident, we skip the
-        //    LLM entirely — the router is cheaper, faster, and more
-        //    predictable for common phrasings. Ambiguous or low-confidence
-        //    decisions fall through to the LLM planner below.
+        // 2. Semantic router — PRIMARY intent classifier.
+        //    Gets first crack at every non-greeting query because it's the
+        //    layer that actually understands semantics. The keyword OOS
+        //    filter below only runs when the router can't help (cold start
+        //    before prewarm, or on older iOS without NLEmbedding).
+        //
+        //    The router's OOS exemplars (25+ seed queries covering market
+        //    forecasts, stock picks, retirement advice) handle scope
+        //    refusals better than any keyword list can — they generalize
+        //    to paraphrases and get smarter with telemetry-driven training.
         if let semanticRouter, await semanticRouter.isAvailable {
             let decision = await semanticRouter.route(query: query)
             switch decision {
@@ -91,8 +92,16 @@ public struct ToolPlanner: Sendable {
                     return Plan(calls: [call], source: .semantic)
                 }
             case .uncertain:
-                break // fall through to LLM
+                break // fall through to LLM — router wasn't confident enough
             }
+        } else if Self.isOutOfScope(query) {
+            // 2b. ONLY when the semantic router is unavailable (cold start,
+            //     unsupported platform) do we fall back to keyword-based
+            //     OOS detection. This is a degraded-mode safety net, not
+            //     the primary path. Even here, the keyword list is
+            //     advice-specific (e.g. "save for retirement") so it
+            //     doesn't false-positive on legitimate balance queries.
+            return Plan(calls: [], source: .unsupported)
         }
 
         let catalog = await registry.catalogText()
