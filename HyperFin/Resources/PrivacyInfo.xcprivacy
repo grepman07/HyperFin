@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+    HyperFin Privacy Manifest
+
+    Required by Apple for App Store Connect submissions since May 2024.
+    Declares:
+      - What personal/sensitive data we collect
+      - Which "Required Reason APIs" we use and why
+      - Whether we track users across apps/websites (we don't)
+
+    Keep this file in sync with the App Privacy questionnaire answers in
+    App Store Connect. If the two diverge, Apple's review will flag it.
+    -->
+
+    <!-- NSPrivacyTracking: true if the app links data to third-party data
+         for advertising or marketing. HyperFin does not. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <!-- NSPrivacyTrackingDomains: URLs used for cross-app/site tracking.
+         Empty because we don't track. -->
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!-- NSPrivacyCollectedDataTypes: what personal data leaves the device.
+         Each entry declares: the data type, whether it's linked to identity,
+         whether it's used for tracking, and what purposes it's used for.
+
+         HyperFin's privacy model: the bulk of data (transactions, balances,
+         holdings) stays on-device. What DOES leave the device is limited to:
+           1. Email + password hash for authentication (our DO backend)
+           2. Plaid access tokens (relay to Plaid via our server)
+           3. Optionally: anonymized chat queries for product improvement
+              (only if user opts in to telemetry)
+           4. Optionally: anonymized chat queries sent to Anthropic Claude
+              (only if user opts in to cloud chat) -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array>
+
+        <!-- Email address for account login -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeEmailAddress</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!-- Financial info relayed to Plaid for bank connectivity.
+             Specifically: Plaid account access tokens + Plaid webhook data.
+             Transaction rows themselves are stored only on device. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherFinancialInfo</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!-- Stable random install ID stored in Keychain. Used to correlate
+             telemetry events from the same install without identifying the
+             user. Not linked to advertising identifiers. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeUserID</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+        </dict>
+
+        <!-- Anonymized product-interaction data (chat queries, tool names,
+             latency) collected only when the user opts into telemetry. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeProductInteraction</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!-- Crash / performance data captured only when telemetry opt-in. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherDiagnosticData</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- NSPrivacyAccessedAPITypes: "Required Reason APIs" we call directly.
+         Apple's static analyzer will flag any symbol in the compiled binary
+         that matches these categories but isn't declared here.
+
+         HyperFin's first-party code uses NONE of these APIs directly.
+         Third-party SDKs (Plaid LinkKit, MLX-Swift, swift-nio, etc.)
+         ship their own privacy manifests that Apple merges with this one
+         at build time — we don't need to declare their usage on their
+         behalf.
+
+         If a future submission is rejected for undeclared API usage,
+         add the category + reason here. Apple's documentation lists the
+         valid reason strings for each category:
+           https://developer.apple.com/documentation/bundleresources/privacy_manifest_files/describing_use_of_required_reason_api
+    -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array/>
+</dict>
+</plist>

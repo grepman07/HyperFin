@@ -22,25 +22,14 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.hyperfin.app.refresh</string>
 	</array>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>HyperFin connects to a local development server for bank account linking.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_http._tcp</string>
-	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>HyperFin uses the camera to scan receipts and create transactions.</string>
+	<string>HyperFin uses the camera to scan paper receipts and automatically create transactions.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>HyperFin uses Face ID to securely unlock your financial data.</string>
+	<string>HyperFin uses Face ID to securely unlock your financial data on this device.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
